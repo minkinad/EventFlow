@@ -1,0 +1,76 @@
+server:
+  port: ${SERVER_PORT:8081}
+  shutdown: graceful
+
+spring:
+  application:
+    name: processing-service
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/eventflow_processing}
+    username: ${DATABASE_USERNAME:eventflow}
+    password: ${DATABASE_PASSWORD:eventflow}
+    hikari:
+      maximum-pool-size: 12
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: eventflow-processing-v1
+      enable-auto-commit: false
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      properties:
+        isolation.level: read_committed
+    listener:
+      ack-mode: manual_immediate
+    producer:
+      acks: all
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      properties:
+        enable.idempotence: true
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+
+eventflow:
+  processing:
+    lease-seconds: 120
+    max-attempts: 5
+  outbox:
+    poll-interval: 250ms
+    batch-size: 100
+  enrichment:
+    base-url: ${ENRICHMENT_BASE_URL:http://localhost:8090}
+
+resilience4j:
+  retry:
+    instances:
+      enrichment:
+        max-attempts: 3
+        wait-duration: 250ms
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+  circuitbreaker:
+    instances:
+      enrichment:
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLING_PROBABILITY:1.0}
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://localhost:4318/v1/traces}
