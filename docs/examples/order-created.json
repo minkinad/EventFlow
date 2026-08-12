@@ -1,0 +1,16 @@
+{
+  "eventId": "018f3f3e-7b1a-7d2c-9a10-111111111111",
+  "eventType": "order.created",
+  "source": "checkout-service",
+  "schemaVersion": 1,
+  "occurredAt": "2026-08-12T10:15:30Z",
+  "payload": {
+    "orderId": "ORD-2026-0001",
+    "customerId": "CUS-1001",
+    "total": 149.90,
+    "currency": "USD"
+  },
+  "metadata": {
+    "tenantId": "demo"
+  }
+}
