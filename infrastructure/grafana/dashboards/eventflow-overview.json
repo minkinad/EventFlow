@@ -1,0 +1,47 @@
+{
+  "uid": "eventflow-overview",
+  "title": "EventFlow Overview",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": {"from": "now-1h", "to": "now"},
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "HTTP request rate",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "targets": [{"expr": "sum by (application) (rate(http_server_requests_seconds_count[5m]))", "legendFormat": "{{application}}"}]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Processing outcomes",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "targets": [
+        {"expr": "rate(eventflow_processing_completed_total[5m])", "legendFormat": "completed"},
+        {"expr": "rate(eventflow_processing_failed_total[5m])", "legendFormat": "failed"}
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Delivery rate by target",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "targets": [
+        {"expr": "sum by (target) (rate(eventflow_delivery_succeeded_total[5m]))", "legendFormat": "{{target}} success"},
+        {"expr": "sum by (target) (rate(eventflow_delivery_failed_total[5m]))", "legendFormat": "{{target}} failure"}
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Outbox publication",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "targets": [
+        {"expr": "rate(eventflow_outbox_published_total[5m])", "legendFormat": "published"},
+        {"expr": "rate(eventflow_outbox_failures_total[5m])", "legendFormat": "failures"}
+      ]
+    }
+  ]
+}
