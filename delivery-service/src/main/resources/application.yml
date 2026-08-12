@@ -1,0 +1,77 @@
+server:
+  port: ${SERVER_PORT:8082}
+  shutdown: graceful
+
+spring:
+  application:
+    name: delivery-service
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/eventflow_delivery}
+    username: ${DATABASE_USERNAME:eventflow}
+    password: ${DATABASE_PASSWORD:eventflow}
+    hikari:
+      maximum-pool-size: 12
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: eventflow-delivery-v1
+      enable-auto-commit: false
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      properties:
+        isolation.level: read_committed
+    listener:
+      ack-mode: manual_immediate
+    producer:
+      acks: all
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      properties:
+        enable.idempotence: true
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+
+eventflow:
+  delivery:
+    poll-interval: 500ms
+    batch-size: 50
+    max-attempts: 8
+    lease-seconds: 60
+  clickhouse:
+    url: ${CLICKHOUSE_URL:http://localhost:8123}
+    username: ${CLICKHOUSE_USERNAME:eventflow}
+    password: ${CLICKHOUSE_PASSWORD:eventflow}
+
+resilience4j:
+  retry:
+    instances:
+      externalDelivery:
+        max-attempts: 3
+        wait-duration: 300ms
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+  circuitbreaker:
+    instances:
+      externalDelivery:
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLING_PROBABILITY:1.0}
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://localhost:4318/v1/traces}
