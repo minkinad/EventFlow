@@ -7,15 +7,15 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class RawEventListener {
-    private final ProcessingCoordinator coordinator;
+  private final ProcessingCoordinator coordinator;
 
-    public RawEventListener(ProcessingCoordinator coordinator) {
-        this.coordinator = coordinator;
-    }
+  public RawEventListener(ProcessingCoordinator coordinator) {
+    this.coordinator = coordinator;
+  }
 
-    @KafkaListener(topics = "${eventflow.kafka.raw-topic:" + EventTopics.RAW_EVENTS + "}")
-    public void consume(String message, Acknowledgment acknowledgment) {
-        coordinator.handle(message);
-        acknowledgment.acknowledge();
-    }
+  @KafkaListener(topics = "${eventflow.kafka.raw-topic:" + EventTopics.RAW_EVENTS + "}")
+  public void consume(String message, Acknowledgment acknowledgment) {
+    coordinator.handle(message);
+    acknowledgment.acknowledge();
+  }
 }

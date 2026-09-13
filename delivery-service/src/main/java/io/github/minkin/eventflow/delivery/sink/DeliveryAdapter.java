@@ -4,7 +4,7 @@ import io.github.minkin.eventflow.contracts.TargetType;
 import io.github.minkin.eventflow.delivery.job.DeliveryJob;
 
 public interface DeliveryAdapter {
-    TargetType targetType();
+  TargetType targetType();
 
-    void deliver(DeliveryJob job);
+  void deliver(DeliveryJob job);
 }
