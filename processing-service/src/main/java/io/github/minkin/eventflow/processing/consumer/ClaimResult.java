@@ -1,4 +1,5 @@
 package io.github.minkin.eventflow.processing.consumer;
 
-public record ClaimResult(ClaimDecision decision, int attempt) {
-}
+import java.util.UUID;
+
+public record ClaimResult(ClaimDecision decision, int attempt, UUID leaseToken) {}

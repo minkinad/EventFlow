@@ -9,38 +9,44 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class PostgresDeliveryAdapter implements DeliveryAdapter {
-    private final JdbcClient jdbc;
-    private final ObjectMapper objectMapper;
+  private final JdbcClient jdbc;
+  private final ObjectMapper objectMapper;
 
-    public PostgresDeliveryAdapter(JdbcClient jdbc, ObjectMapper objectMapper) {
-        this.jdbc = jdbc;
-        this.objectMapper = objectMapper;
-    }
+  public PostgresDeliveryAdapter(JdbcClient jdbc, ObjectMapper objectMapper) {
+    this.jdbc = jdbc;
+    this.objectMapper = objectMapper;
+  }
 
-    @Override
-    public TargetType targetType() {
-        return TargetType.POSTGRES;
-    }
+  @Override
+  public TargetType targetType() {
+    return TargetType.POSTGRES;
+  }
 
-    @Override
-    public void deliver(DeliveryJob job) {
-        jdbc.sql("""
+  @Override
+  public void deliver(DeliveryJob job) {
+    jdbc.sql(
+            """
                         INSERT INTO operational_event
                             (event_id, destination, event_type, pipeline, payload, processed_at, delivered_at)
                         VALUES (:eventId, :destination, :eventType, :pipeline,
                                 CAST(:payload AS jsonb), :processedAt, now())
                         ON CONFLICT (event_id, destination) DO UPDATE
                         SET payload=EXCLUDED.payload, processed_at=EXCLUDED.processed_at, delivered_at=now()
-                        """).param("eventId", job.command().eventId()).param("destination", job.target().destination())
-                .param("eventType", job.command().eventType()).param("pipeline", job.command().pipeline())
-                .param("payload", json(job.command().payload())).param("processedAt", job.command().processedAt()).update();
-    }
+                        """)
+        .param("eventId", job.command().eventId())
+        .param("destination", job.target().destination())
+        .param("eventType", job.command().eventType())
+        .param("pipeline", job.command().pipeline())
+        .param("payload", json(job.command().payload()))
+        .param("processedAt", job.command().processedAt().atOffset(java.time.ZoneOffset.UTC))
+        .update();
+  }
 
-    private String json(Object value) {
-        try {
-            return objectMapper.writeValueAsString(value);
-        } catch (JsonProcessingException exception) {
-            throw new IllegalArgumentException(exception);
-        }
+  private String json(Object value) {
+    try {
+      return objectMapper.writeValueAsString(value);
+    } catch (JsonProcessingException exception) {
+      throw new IllegalArgumentException(exception);
     }
+  }
 }

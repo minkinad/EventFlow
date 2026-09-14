@@ -10,21 +10,26 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class DeliveryCommandListener {
-    private final ObjectMapper objectMapper;
-    private final DeliveryJobRepository repository;
+  private final ObjectMapper objectMapper;
+  private final DeliveryJobRepository repository;
 
-    public DeliveryCommandListener(ObjectMapper objectMapper, DeliveryJobRepository repository) {
-        this.objectMapper = objectMapper;
-        this.repository = repository;
-    }
+  public DeliveryCommandListener(ObjectMapper objectMapper, DeliveryJobRepository repository) {
+    this.objectMapper = objectMapper;
+    this.repository = repository;
+  }
 
-    @KafkaListener(topics = "${eventflow.kafka.delivery-topic:" + EventTopics.DELIVERY_COMMANDS + "}")
-    public void consume(String rawMessage, Acknowledgment acknowledgment) {
-        try {
-            repository.accept(objectMapper.readValue(rawMessage, DeliveryCommand.class), rawMessage);
-        } catch (JsonProcessingException exception) {
-            repository.malformed(rawMessage, exception.getMessage());
-        }
-        acknowledgment.acknowledge();
+  @KafkaListener(topics = "${eventflow.kafka.delivery-topic:" + EventTopics.DELIVERY_COMMANDS + "}")
+  public void consume(String rawMessage, Acknowledgment acknowledgment) {
+    DeliveryCommand command;
+    try {
+      command = objectMapper.readValue(rawMessage, DeliveryCommand.class);
+      io.github.minkin.eventflow.contracts.ContractValidation.validate(command);
+    } catch (JsonProcessingException | IllegalArgumentException exception) {
+      repository.malformed(rawMessage, "Invalid or unsupported delivery contract");
+      acknowledgment.acknowledge();
+      return;
     }
+    repository.accept(command, rawMessage);
+    acknowledgment.acknowledge();
+  }
 }

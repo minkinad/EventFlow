@@ -1,4 +1,4 @@
-package io.github.minkin.eventflow.processing.config;
+package io.github.minkin.eventflow.delivery.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -8,7 +8,7 @@ import org.springframework.util.backoff.ExponentialBackOff;
 @Configuration
 public class KafkaConsumerConfiguration {
   @Bean
-  DefaultErrorHandler processingErrorHandler() {
+  DefaultErrorHandler deliveryErrorHandler() {
     ExponentialBackOff backOff = new ExponentialBackOff(500, 2.0);
     backOff.setMaxInterval(30_000);
     // Business failures are bounded in durable state; infrastructure failure cannot discard a

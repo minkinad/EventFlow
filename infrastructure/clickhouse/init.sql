@@ -12,5 +12,5 @@ CREATE TABLE IF NOT EXISTS eventflow.events
 )
 ENGINE = ReplacingMergeTree(version)
 PARTITION BY toYYYYMM(processed_at)
-ORDER BY (event_type, event_id)
-TTL processed_at + INTERVAL 365 DAY DELETE;
+ORDER BY (event_type, event_id, destination)
+TTL toDateTime(processed_at) + INTERVAL 365 DAY DELETE;
