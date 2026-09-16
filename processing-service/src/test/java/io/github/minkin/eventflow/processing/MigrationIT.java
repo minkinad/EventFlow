@@ -22,7 +22,7 @@ class MigrationIT {
             .load();
 
     assertThat(flyway.migrate().success).isTrue();
-    assertThat(flyway.info().applied()).hasSize(4);
+    assertThat(flyway.info().applied()).hasSize(5);
     assertThat(flyway.migrate().migrationsExecuted).isZero();
   }
 }

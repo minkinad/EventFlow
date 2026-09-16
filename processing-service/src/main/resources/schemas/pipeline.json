@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object", "additionalProperties": false,
+  "required": ["name", "version", "eventType", "steps"],
+  "properties": {
+    "name": {"type": "string", "pattern": "^[a-z][a-z0-9._-]{1,119}$"},
+    "version": {"type": "integer", "minimum": 1, "maximum": 2147483647},
+    "eventType": {"type": "string", "pattern": "^[a-z][a-z0-9._-]{1,119}$"},
+    "steps": {"type": "array", "minItems": 1, "maxItems": 32, "items": {"oneOf": [
+      {"type": "object", "additionalProperties": false, "required": ["type", "schema"],
+       "properties": {"type": {"const": "validate"}, "schema": {"type": "string", "minLength": 1, "maxLength": 120}}},
+      {"type": "object", "additionalProperties": false, "required": ["type", "source"],
+       "properties": {"type": {"const": "enrich"}, "source": {"type": "string", "pattern": "^[a-z][a-z0-9._-]{1,119}$"}}},
+      {"type": "object", "additionalProperties": false, "required": ["type", "target", "destination"],
+       "properties": {"type": {"const": "route"}, "target": {"enum": ["POSTGRES", "CLICKHOUSE", "EXTERNAL_HTTP"]},
+         "destination": {"type": "string", "minLength": 1, "maxLength": 255}, "options": {"type": "object", "maxProperties": 0}}}
+    ]}}
+  }
+}
