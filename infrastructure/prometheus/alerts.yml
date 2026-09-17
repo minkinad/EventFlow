@@ -1,0 +1,23 @@
+groups:
+  - name: eventflow-reliability
+    rules:
+      - alert: OutboxStuck
+        expr: eventflow_outbox_oldest_age_seconds > 60
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: 'Outbox has unpublished work older than one minute'
+          runbook_url: https://github.com/minkinad/EventFlow/blob/main/docs/runbooks/recovery.md
+      - alert: ProcessingFailures
+        expr: increase(eventflow_processing_failed_total[5m]) > 0
+        labels: {severity: warning}
+        annotations:
+          summary: 'Processing produced terminal failures'
+          runbook_url: https://github.com/minkinad/EventFlow/blob/main/docs/runbooks/recovery.md
+      - alert: HttpCircuitOpen
+        expr: eventflow_delivery_circuit_breaker_state == 1
+        for: 2m
+        labels: {severity: warning}
+        annotations:
+          summary: 'A configured HTTP destination circuit is open'
+          runbook_url: https://github.com/minkinad/EventFlow/blob/main/docs/runbooks/recovery.md

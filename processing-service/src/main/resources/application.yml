@@ -8,7 +8,7 @@ spring:
   datasource:
     url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/eventflow_processing}
     username: ${DATABASE_USERNAME:eventflow}
-    password: ${DATABASE_PASSWORD:eventflow}
+    password: ${DATABASE_PASSWORD}
     hikari:
       maximum-pool-size: 12
   kafka:
@@ -29,6 +29,10 @@ spring:
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
       properties:
         enable.idempotence: true
+        max.block.ms: 5000
+        delivery.timeout.ms: 20000
+        request.timeout.ms: 10000
+        max.request.size: 1048576
   lifecycle:
     timeout-per-shutdown-phase: 30s
 
@@ -60,6 +64,9 @@ resilience4j:
         permitted-number-of-calls-in-half-open-state: 3
 
 management:
+  metrics:
+    tags:
+      application: ${spring.application.name}
   endpoints:
     web:
       exposure:
@@ -68,9 +75,17 @@ management:
     health:
       probes:
         enabled: true
+      group:
+        readiness:
+          include: readinessState,db
   tracing:
     sampling:
       probability: ${TRACING_SAMPLING_PROBABILITY:1.0}
   otlp:
     tracing:
       endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://localhost:4318/v1/traces}
+
+logging:
+  structured:
+    format:
+      console: logstash

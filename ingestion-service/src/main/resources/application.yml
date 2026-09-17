@@ -8,7 +8,7 @@ spring:
   datasource:
     url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/eventflow_ingestion}
     username: ${DATABASE_USERNAME:eventflow}
-    password: ${DATABASE_PASSWORD:eventflow}
+    password: ${DATABASE_PASSWORD}
     hikari:
       maximum-pool-size: 10
   kafka:
@@ -17,6 +17,10 @@ spring:
       acks: all
       properties:
         enable.idempotence: true
+        max.block.ms: 5000
+        delivery.timeout.ms: 20000
+        request.timeout.ms: 10000
+        max.request.size: 1048576
         max.in.flight.requests.per.connection: 5
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
@@ -39,6 +43,9 @@ eventflow:
     lease-seconds: 30
 
 management:
+  metrics:
+    tags:
+      application: ${spring.application.name}
   endpoints:
     web:
       exposure:
@@ -47,9 +54,17 @@ management:
     health:
       probes:
         enabled: true
+      group:
+        readiness:
+          include: readinessState,db
   tracing:
     sampling:
       probability: ${TRACING_SAMPLING_PROBABILITY:1.0}
   otlp:
     tracing:
       endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://localhost:4318/v1/traces}
+
+logging:
+  structured:
+    format:
+      console: logstash
