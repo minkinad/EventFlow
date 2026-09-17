@@ -1,0 +1,102 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "EventFlow Delivery API",
+    "version": "0.1.0",
+    "description": "Local development API. Authentication and tenant isolation are not implemented. Never expose publicly."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8082"
+    }
+  ],
+  "security": [],
+  "paths": {
+    "/api/v1/events/{eventId}/deliveries": {
+      "get": {
+        "summary": "Inspect independent delivery job statuses",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error; malformed input 400, missing entity 404, conflict 409, admission limit 429, infrastructure failure 5xx.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "eventId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/dlq/{id}/replay": {
+      "post": {
+        "summary": "Reset one DEAD delivery job; stable eventId, new bounded attempt budget; no bulk replay",
+        "responses": {
+          "202": {
+            "description": "Replay requested"
+          },
+          "default": {
+            "description": "Error; malformed input 400, missing entity 404, conflict 409, admission limit 429, infrastructure failure 5xx.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Problem": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "instance": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

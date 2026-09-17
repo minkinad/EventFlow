@@ -1,0 +1,996 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "EventFlow Processing API",
+    "version": "0.1.0",
+    "description": "Local development API. Authentication and tenant isolation are not implemented. Never expose publicly."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8081"
+    }
+  ],
+  "security": [],
+  "paths": {
+    "/api/v1/pipelines": {
+      "post": {
+        "summary": "Create a structurally valid draft",
+        "responses": {
+          "201": {
+            "description": "Draft created; Location points to the summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "integer"
+                    },
+                    "eventType": {
+                      "type": "string"
+                    },
+                    "active": {
+                      "type": "boolean"
+                    },
+                    "state": {
+                      "enum": [
+                        "DRAFT",
+                        "VALIDATED",
+                        "ACTIVE",
+                        "SUPERSEDED",
+                        "DISABLED"
+                      ]
+                    },
+                    "revision": {
+                      "type": "integer"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; malformed input 400, missing entity 404, conflict 409, admission limit 429, infrastructure failure 5xx.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "version",
+                  "eventType",
+                  "steps"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9._-]{1,119}$"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 2147483647
+                  },
+                  "eventType": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9._-]{1,119}$"
+                  },
+                  "steps": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 32,
+                    "items": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "type",
+                            "schema"
+                          ],
+                          "properties": {
+                            "type": {
+                              "const": "validate"
+                            },
+                            "schema": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 120
+                            }
+                          }
+                        },
+                        {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "type",
+                            "source"
+                          ],
+                          "properties": {
+                            "type": {
+                              "const": "enrich"
+                            },
+                            "source": {
+                              "type": "string",
+                              "pattern": "^[a-z][a-z0-9._-]{1,119}$"
+                            }
+                          }
+                        },
+                        {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "type",
+                            "target",
+                            "destination"
+                          ],
+                          "properties": {
+                            "type": {
+                              "const": "route"
+                            },
+                            "target": {
+                              "enum": [
+                                "POSTGRES",
+                                "CLICKHOUSE",
+                                "EXTERNAL_HTTP"
+                              ]
+                            },
+                            "destination": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 255
+                            },
+                            "options": {
+                              "type": "object",
+                              "maxProperties": 0
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/pipelines/{id}": {
+      "get": {
+        "summary": "Read lifecycle and revision",
+        "responses": {
+          "200": {
+            "description": "Summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "integer"
+                    },
+                    "eventType": {
+                      "type": "string"
+                    },
+                    "active": {
+                      "type": "boolean"
+                    },
+                    "state": {
+                      "enum": [
+                        "DRAFT",
+                        "VALIDATED",
+                        "ACTIVE",
+                        "SUPERSEDED",
+                        "DISABLED"
+                      ]
+                    },
+                    "revision": {
+                      "type": "integer"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; malformed input 400, missing entity 404, conflict 409, admission limit 429, infrastructure failure 5xx.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      },
+      "put": {
+        "summary": "Edit DRAFT/VALIDATED; identity fields cannot change",
+        "responses": {
+          "200": {
+            "description": "Draft with validation reset",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "integer"
+                    },
+                    "eventType": {
+                      "type": "string"
+                    },
+                    "active": {
+                      "type": "boolean"
+                    },
+                    "state": {
+                      "enum": [
+                        "DRAFT",
+                        "VALIDATED",
+                        "ACTIVE",
+                        "SUPERSEDED",
+                        "DISABLED"
+                      ]
+                    },
+                    "revision": {
+                      "type": "integer"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; malformed input 400, missing entity 404, conflict 409, admission limit 429, infrastructure failure 5xx.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "revision",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "Expected current revision; stale changes return 409."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "version",
+                  "eventType",
+                  "steps"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9._-]{1,119}$"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 2147483647
+                  },
+                  "eventType": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9._-]{1,119}$"
+                  },
+                  "steps": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 32,
+                    "items": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "type",
+                            "schema"
+                          ],
+                          "properties": {
+                            "type": {
+                              "const": "validate"
+                            },
+                            "schema": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 120
+                            }
+                          }
+                        },
+                        {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "type",
+                            "source"
+                          ],
+                          "properties": {
+                            "type": {
+                              "const": "enrich"
+                            },
+                            "source": {
+                              "type": "string",
+                              "pattern": "^[a-z][a-z0-9._-]{1,119}$"
+                            }
+                          }
+                        },
+                        {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "type",
+                            "target",
+                            "destination"
+                          ],
+                          "properties": {
+                            "type": {
+                              "const": "route"
+                            },
+                            "target": {
+                              "enum": [
+                                "POSTGRES",
+                                "CLICKHOUSE",
+                                "EXTERNAL_HTTP"
+                              ]
+                            },
+                            "destination": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 255
+                            },
+                            "options": {
+                              "type": "object",
+                              "maxProperties": 0
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/pipelines/{id}/activate": {
+      "post": {
+        "summary": "Activate pipeline; concurrent or invalid lifecycle transition returns 409",
+        "responses": {
+          "200": {
+            "description": "Updated summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "integer"
+                    },
+                    "eventType": {
+                      "type": "string"
+                    },
+                    "active": {
+                      "type": "boolean"
+                    },
+                    "state": {
+                      "enum": [
+                        "DRAFT",
+                        "VALIDATED",
+                        "ACTIVE",
+                        "SUPERSEDED",
+                        "DISABLED"
+                      ]
+                    },
+                    "revision": {
+                      "type": "integer"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; malformed input 400, missing entity 404, conflict 409, admission limit 429, infrastructure failure 5xx.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "revision",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "Expected current revision; stale changes return 409."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "reason"
+                ],
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1000
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/pipelines/{id}/rollback": {
+      "post": {
+        "summary": "Rollback pipeline; concurrent or invalid lifecycle transition returns 409",
+        "responses": {
+          "200": {
+            "description": "Updated summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "integer"
+                    },
+                    "eventType": {
+                      "type": "string"
+                    },
+                    "active": {
+                      "type": "boolean"
+                    },
+                    "state": {
+                      "enum": [
+                        "DRAFT",
+                        "VALIDATED",
+                        "ACTIVE",
+                        "SUPERSEDED",
+                        "DISABLED"
+                      ]
+                    },
+                    "revision": {
+                      "type": "integer"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; malformed input 400, missing entity 404, conflict 409, admission limit 429, infrastructure failure 5xx.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "revision",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "Expected current revision; stale changes return 409."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "reason"
+                ],
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1000
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/pipelines/{id}/disable": {
+      "post": {
+        "summary": "Disable pipeline; concurrent or invalid lifecycle transition returns 409",
+        "responses": {
+          "200": {
+            "description": "Updated summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "integer"
+                    },
+                    "eventType": {
+                      "type": "string"
+                    },
+                    "active": {
+                      "type": "boolean"
+                    },
+                    "state": {
+                      "enum": [
+                        "DRAFT",
+                        "VALIDATED",
+                        "ACTIVE",
+                        "SUPERSEDED",
+                        "DISABLED"
+                      ]
+                    },
+                    "revision": {
+                      "type": "integer"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; malformed input 400, missing entity 404, conflict 409, admission limit 429, infrastructure failure 5xx.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "revision",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "Expected current revision; stale changes return 409."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "reason"
+                ],
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1000
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/pipelines/{id}/validate": {
+      "post": {
+        "summary": "Validate pipeline; concurrent or invalid lifecycle transition returns 409",
+        "responses": {
+          "200": {
+            "description": "Updated summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "integer"
+                    },
+                    "eventType": {
+                      "type": "string"
+                    },
+                    "active": {
+                      "type": "boolean"
+                    },
+                    "state": {
+                      "enum": [
+                        "DRAFT",
+                        "VALIDATED",
+                        "ACTIVE",
+                        "SUPERSEDED",
+                        "DISABLED"
+                      ]
+                    },
+                    "revision": {
+                      "type": "integer"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; malformed input 400, missing entity 404, conflict 409, admission limit 429, infrastructure failure 5xx.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "revision",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "Expected current revision; stale changes return 409."
+          }
+        ]
+      }
+    },
+    "/api/v1/pipelines/{id}/dry-run": {
+      "post": {
+        "summary": "Preview payload validation/routing without writes or external calls; enrichment is skipped and yields valid=false",
+        "responses": {
+          "200": {
+            "description": "Per-step results, selectedRoutes, warnings/errors and durationNanos"
+          },
+          "default": {
+            "description": "Error; malformed input 400, missing entity 404, conflict 409, admission limit 429, infrastructure failure 5xx.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/schemas/{name}": {
+      "put": {
+        "summary": "Publish an immutable named JSON Schema 2020-12; only document-local references",
+        "responses": {
+          "204": {
+            "description": "Schema stored, or identical version already exists"
+          },
+          "default": {
+            "description": "Error; malformed input 400, missing entity 404, conflict 409, admission limit 429, infrastructure failure 5xx.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/events/{eventId}": {
+      "get": {
+        "summary": "Inspect processing-owned durable state",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error; malformed input 400, missing entity 404, conflict 409, admission limit 429, infrastructure failure 5xx.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "eventId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/dlq/{id}/replay": {
+      "post": {
+        "summary": "Replay a terminal processing failure with the same eventId; no bulk replay",
+        "responses": {
+          "202": {
+            "description": "Replay requested"
+          },
+          "default": {
+            "description": "Error; malformed input 400, missing entity 404, conflict 409, admission limit 429, infrastructure failure 5xx.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Problem": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "instance": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

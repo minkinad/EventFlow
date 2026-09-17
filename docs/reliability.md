@@ -29,7 +29,7 @@
 
 ## Retry taxonomy
 
-Do not retry invalid JSON, schema violations, missing pipeline/schema, forbidden destinations, or idempotency conflicts. Retry timeouts, connection resets, HTTP 408/429/5xx, and temporary database/Kafka errors. A remote HTTP 4xx other than 408/409/425/429 is normally terminal.
+Do not retry invalid JSON, schema violations, missing pipeline/schema, forbidden destinations, or idempotency conflicts. Retry timeouts, connection resets, HTTP 408/425/429/5xx, and temporary database/Kafka errors. A remote HTTP 4xx other than 408/425/429 is normally terminal.
 
 There are three distinct retry layers:
 
@@ -66,3 +66,16 @@ The current API supports single-record replay. Bulk replay, dry-run, RBAC, audit
 - Redis: reconstructible limiter/cache state; no strict RPO dependency.
 
 Proposed targets after validation: operational PostgreSQL RPO 5 minutes/RTO 30 minutes; Kafka single-node/broker failure RPO 0 in a three-broker cluster; analytics RPO 1 hour/RTO 4 hours.
+
+## Implemented recovery protocol (2026-09-17)
+
+Processing and delivery transitions require a current fencing token and live lease.
+Expired DELIVERING jobs are reclaimable. Delivery claims each job immediately before
+execution, within the configured poll budget. Outbox confirmation/release is fenced
+by a fresh claim owner. Retry timestamps survive process restart.
+
+Kafka infrastructure failures have no log-and-discard recovery path; business errors
+must persist their DLQ outcome before acknowledgement. FAILED processing duplicates
+are terminal; explicit replay is a guarded state change. Replay copies original inbox
+JSON and compares JSONB identity, avoiding serialization and numeric-rounding conflicts.
+See [ADR-008](decisions/008-fenced-recovery.md) for the limits of remote effect fencing.

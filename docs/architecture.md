@@ -158,7 +158,7 @@ Production uses replication factor 3 and `min.insync.replicas=2`; local Compose 
 }
 ```
 
-The engine uses a fixed allow-list of Java step implementations. Configuration selects and parameterizes code; it cannot load arbitrary classes or scripts. Before production, activation must add JSON Schema validation for the pipeline definition, RBAC, audit history, dry-run, and optimistic version checks.
+The engine uses a fixed allow-list of Java step implementations. Configuration selects and parameterizes code; it cannot load arbitrary classes or scripts. Pipeline definitions now use strict JSON Schema, optimistic revisions, atomic activation/rollback, local append-only history and a side-effect-free dry-run. RBAC, authenticated tenant scope and authenticated audit identity remain release gates. See [the control-plane guide](control-plane.md).
 
 ## 8. Scaling model
 
@@ -179,7 +179,7 @@ The current code is a local-development foundation. Pipeline definitions already
 - per-tenant limits and quotas;
 - TLS/SASL for Kafka, TLS for databases and all HTTP traffic;
 - secrets from a secret manager, not Compose environment defaults;
-- an allow-list for external destinations to prevent SSRF;
+- authenticated destination management (delivery already enforces an exact HTTPS allow-list and connection-time DNS/IP policy);
 - payload size/depth limits and sensitive-field redaction;
 - immutable audit records for pipeline/schema changes and DLQ replay.
 

@@ -1,5 +1,10 @@
 # Implementation roadmap
 
+Checkpoint 2026-09-17: the upgrade is in progress. See [the implementation report](implementation-report.md) for evidence and remaining release gates.
+
+Implemented in this increment: fenced processing/delivery/outbox recovery, durable retry deadlines, guarded replay, strict build gates, real infrastructure/E2E tests, HTTP egress protection, and a revisioned pipeline lifecycle with validate/dry-run/rollback and local append-only history. Full Maven verification passed with 58 tests, including packaged E2E. Final Compose startup/smoke checks and full authenticated tenancy are still pending.
+
+
 The roadmap is organized as vertical increments. A capability is complete only when its failure path, tests, telemetry, and runbook exist.
 
 ## Increment 0 — architecture foundation (current)
@@ -27,8 +32,8 @@ Definition of Done: `mvn verify` and an end-to-end Compose smoke test pass in CI
 ## Increment 2 — pipeline control plane
 
 - Pipeline-definition JSON Schema and semantic validation.
-- Immutable schema names and draft/validate/activate pipeline lifecycle are implemented; add rollback and audit history.
-- Dry-run endpoint with a supplied event and no side effects.
+- Immutable schema names and revisioned draft/validate/dry-run/activate/rollback/disable lifecycle are implemented and covered by tests. Local append-only history exists; authenticated identity remains open.
+- Implemented: dry-run endpoint with a supplied payload and no side effects; external enrichment is explicitly skipped.
 - Schema compatibility checks.
 - Optimistic locking and audited operator identity.
 - Cache active definitions with explicit invalidation.

@@ -1,0 +1,166 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "EventFlow Ingestion API",
+    "version": "0.1.0",
+    "description": "Local development API. Authentication and tenant isolation are not implemented. Never expose publicly."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8080"
+    }
+  ],
+  "security": [],
+  "paths": {
+    "/api/v1/events": {
+      "post": {
+        "summary": "Accept atomically; same ID and content returns duplicate acceptance, different content returns 409.",
+        "responses": {
+          "202": {
+            "description": "Durably accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "eventId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "status": {
+                      "const": "ACCEPTED"
+                    },
+                    "duplicate": {
+                      "type": "boolean"
+                    },
+                    "acceptedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; malformed input 400, missing entity 404, conflict 409, admission limit 429, infrastructure failure 5xx.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "eventId",
+                  "eventType",
+                  "source",
+                  "schemaVersion",
+                  "occurredAt",
+                  "payload"
+                ],
+                "properties": {
+                  "eventId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "eventType": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "source": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "schemaVersion": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10000
+                  },
+                  "occurredAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "Must not be in the future."
+                  },
+                  "payload": {},
+                  "metadata": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string",
+                      "maxLength": 500
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/events/{eventId}": {
+      "get": {
+        "summary": "Inspect ingestion-owned acceptance/publication status",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error; malformed input 400, missing entity 404, conflict 409, admission limit 429, infrastructure failure 5xx.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "eventId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Problem": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "instance": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}
