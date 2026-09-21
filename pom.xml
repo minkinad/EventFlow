@@ -12,6 +12,7 @@
 
     <modules>
         <module>common</module>
+        <module>security</module>
         <module>ingestion-service</module>
         <module>processing-service</module>
         <module>delivery-service</module>
