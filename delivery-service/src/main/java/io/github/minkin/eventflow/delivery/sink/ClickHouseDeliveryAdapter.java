@@ -37,6 +37,8 @@ public class ClickHouseDeliveryAdapter implements DeliveryAdapter {
   @Override
   public void deliver(DeliveryJob job) {
     ObjectNode row = objectMapper.createObjectNode();
+    row.put("tenant_id", job.command().tenantId());
+    row.put("producer_id", job.command().producerId());
     row.put("event_id", job.command().eventId().toString());
     row.put("event_type", job.command().eventType());
     row.put("pipeline", job.command().pipeline());

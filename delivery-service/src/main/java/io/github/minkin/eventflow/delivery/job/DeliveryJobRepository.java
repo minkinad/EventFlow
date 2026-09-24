@@ -180,14 +180,16 @@ public class DeliveryJobRepository {
     }
   }
 
-  public List<DeliveryStatus> findStatuses(UUID eventId) {
+  public List<DeliveryStatus> findStatuses(UUID eventId, String tenant, String producer) {
     return jdbc.sql(
             """
                         SELECT id, event_id, target_type, destination, status, attempt,
                                next_attempt_at, delivered_at, last_error
-                        FROM delivery_job WHERE event_id = :eventId ORDER BY created_at
+                        FROM delivery_job WHERE event_id = :eventId AND command_id IN (SELECT command_id FROM delivery_message WHERE tenant_id=:tenant AND (:producer IS NULL OR producer_id=:producer)) ORDER BY created_at
                         """)
         .param("eventId", eventId)
+        .param("tenant", tenant)
+        .param("producer", producer, java.sql.Types.VARCHAR)
         .query(
             (rs, rowNum) ->
                 new DeliveryStatus(
@@ -254,18 +256,21 @@ public class DeliveryJobRepository {
   }
 
   @Transactional
-  public void replay(UUID deadLetterId) {
+  public void replay(UUID deadLetterId, String tenant) {
     UUID jobId =
         jdbc.sql(
                 """
                         SELECT job_id FROM delivery_dead_letter
-                        WHERE id=:id AND status='OPEN' AND job_id IS NOT NULL FOR UPDATE
+                        WHERE id=:id AND tenant_id=:tenant AND status='OPEN' AND job_id IS NOT NULL FOR UPDATE
                         """)
             .param("id", deadLetterId)
+            .param("tenant", tenant)
             .query(UUID.class)
             .optional()
             .orElseThrow(
-                () -> new IllegalArgumentException("Open dead letter not found: " + deadLetterId));
+                () ->
+                    new org.springframework.web.server.ResponseStatusException(
+                        org.springframework.http.HttpStatus.NOT_FOUND));
     int changed =
         jdbc.sql(
                 """

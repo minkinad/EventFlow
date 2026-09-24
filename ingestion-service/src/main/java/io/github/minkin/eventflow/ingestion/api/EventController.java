@@ -29,7 +29,9 @@ public class EventController {
   public ResponseEntity<IngestionResponse> ingest(
       @Valid @RequestBody EventSubmission submission,
       @RequestHeader(name = "traceparent", required = false) String traceparent) {
-    var result = ingestionService.ingest(submission, traceparent);
+    var caller = io.github.minkin.eventflow.security.Caller.current();
+    var result =
+        ingestionService.ingest(submission, traceparent, caller.tenant(), caller.subject());
     return ResponseEntity.accepted()
         .location(URI.create("/api/v1/events/" + result.eventId()))
         .body(result);
@@ -37,8 +39,9 @@ public class EventController {
 
   @GetMapping("/{eventId}")
   public ResponseEntity<IngestionStatus> status(@PathVariable UUID eventId) {
+    var caller = io.github.minkin.eventflow.security.Caller.current();
     return repository
-        .findStatus(eventId)
+        .findStatus(eventId, caller.tenant(), caller.ownerFilter())
         .map(ResponseEntity::ok)
         .orElseGet(() -> ResponseEntity.notFound().build());
   }

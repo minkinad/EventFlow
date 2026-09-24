@@ -21,7 +21,10 @@ public class ProcessingStatusController {
   @GetMapping("/{eventId}")
   ResponseEntity<ProcessingStatus> status(@PathVariable UUID eventId) {
     return repository
-        .findStatus(eventId)
+        .findStatus(
+            eventId,
+            io.github.minkin.eventflow.security.Caller.current().tenant(),
+            io.github.minkin.eventflow.security.Caller.current().ownerFilter())
         .map(ResponseEntity::ok)
         .orElseGet(() -> ResponseEntity.notFound().build());
   }

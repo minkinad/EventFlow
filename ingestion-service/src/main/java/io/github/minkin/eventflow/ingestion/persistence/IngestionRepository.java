@@ -20,14 +20,19 @@ public class IngestionRepository {
     this.objectMapper = objectMapper;
   }
 
-  public boolean insertEvent(EventSubmission event, Instant receivedAt, String contentHash) {
+  public boolean insertEvent(
+      EventSubmission event,
+      Instant receivedAt,
+      String contentHash,
+      String tenant,
+      String producer) {
     return jdbc.sql(
                 """
                         INSERT INTO ingested_event
                             (event_id, event_type, source, schema_version, occurred_at, received_at,
-                             payload, metadata, content_hash, status)
+                             payload, metadata, content_hash, status, tenant_id, producer_id)
                         VALUES (:eventId, :eventType, :source, :schemaVersion, :occurredAt, :receivedAt,
-                                CAST(:payload AS jsonb), CAST(:metadata AS jsonb), :contentHash, 'ACCEPTED')
+                                CAST(:payload AS jsonb), CAST(:metadata AS jsonb), :contentHash, 'ACCEPTED', :tenant, :producer)
                         ON CONFLICT (event_id) DO NOTHING
                         """)
             .param("eventId", event.eventId())
@@ -38,28 +43,35 @@ public class IngestionRepository {
             .param("receivedAt", receivedAt.atOffset(java.time.ZoneOffset.UTC))
             .param("payload", json(event.payload()))
             .param("metadata", json(event.metadata()))
+            .param("tenant", tenant)
+            .param("producer", producer)
             .param("contentHash", contentHash)
             .update()
         == 1;
   }
 
-  public Optional<String> findContentHash(UUID eventId) {
-    return jdbc.sql("SELECT content_hash FROM ingested_event WHERE event_id = :eventId")
+  public Optional<String> findContentHash(UUID eventId, String tenant, String producer) {
+    return jdbc.sql(
+            "SELECT content_hash FROM ingested_event WHERE event_id = :eventId AND tenant_id=:tenant AND producer_id=:producer")
         .param("eventId", eventId)
+        .param("tenant", tenant)
+        .param("producer", producer, java.sql.Types.VARCHAR)
         .query(String.class)
         .optional();
   }
 
-  public Optional<IngestionStatus> findStatus(UUID eventId) {
+  public Optional<IngestionStatus> findStatus(UUID eventId, String tenant, String producer) {
     return jdbc.sql(
             """
                         SELECT e.event_id, e.event_type, e.source, e.status, e.received_at,
                                o.published_at, o.attempts, o.last_error
                         FROM ingested_event e
                         LEFT JOIN ingestion_outbox o ON o.aggregate_id = e.event_id
-                        WHERE e.event_id = :eventId
+                        WHERE e.event_id = :eventId AND e.tenant_id=:tenant AND (:producer IS NULL OR e.producer_id=:producer)
                         """)
         .param("eventId", eventId)
+        .param("tenant", tenant)
+        .param("producer", producer, java.sql.Types.VARCHAR)
         .query(
             (rs, rowNum) ->
                 new IngestionStatus(

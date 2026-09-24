@@ -182,16 +182,17 @@ public class ProcessingRepository {
   }
 
   @Transactional
-  public void replay(UUID deadLetterId) {
+  public void replay(UUID deadLetterId, String tenant) {
     Map<String, Object> row =
         jdbc.sql(
                 """
                         SELECT event_id, stage, original_message::text AS original_message
                         FROM processing_dead_letter
-                        WHERE id = :id AND status IN ('OPEN', 'REPLAY_FAILED')
+                        WHERE id = :id AND tenant_id=:tenant AND status IN ('OPEN', 'REPLAY_FAILED')
                         FOR UPDATE
                         """)
             .param("id", deadLetterId)
+            .param("tenant", tenant)
             .query(
                 (rs, rowNum) ->
                     Map.<String, Object>of(
@@ -201,8 +202,8 @@ public class ProcessingRepository {
             .optional()
             .orElseThrow(
                 () ->
-                    new IllegalArgumentException(
-                        "Replayable dead letter not found: " + deadLetterId));
+                    new org.springframework.web.server.ResponseStatusException(
+                        org.springframework.http.HttpStatus.NOT_FOUND));
     UUID eventId = (UUID) row.get("event_id");
     if (!"PROCESSING".equals(row.get("stage"))) {
       throw new IllegalArgumentException(
@@ -237,14 +238,16 @@ public class ProcessingRepository {
         .optional();
   }
 
-  public Optional<ProcessingStatus> findStatus(UUID eventId) {
+  public Optional<ProcessingStatus> findStatus(UUID eventId, String tenant, String producer) {
     return jdbc.sql(
             """
                         SELECT event_id, status, attempt, pipeline_name, pipeline_version,
                                failure_code, failure_message, first_seen_at, updated_at
-                        FROM processing_record WHERE event_id = :eventId
+                        FROM processing_record WHERE event_id = :eventId AND tenant_id=:tenant AND (:producer IS NULL OR producer_id=:producer)
                         """)
         .param("eventId", eventId)
+        .param("tenant", tenant)
+        .param("producer", producer, java.sql.Types.VARCHAR)
         .query(
             (rs, rowNum) ->
                 new ProcessingStatus(

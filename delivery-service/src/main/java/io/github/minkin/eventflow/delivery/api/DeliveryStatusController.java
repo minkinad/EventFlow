@@ -21,7 +21,11 @@ public class DeliveryStatusController {
 
   @GetMapping("/{eventId}/deliveries")
   ResponseEntity<List<DeliveryStatus>> statuses(@PathVariable UUID eventId) {
-    List<DeliveryStatus> statuses = repository.findStatuses(eventId);
+    List<DeliveryStatus> statuses =
+        repository.findStatuses(
+            eventId,
+            io.github.minkin.eventflow.security.Caller.current().tenant(),
+            io.github.minkin.eventflow.security.Caller.current().ownerFilter());
     return statuses.isEmpty() ? ResponseEntity.notFound().build() : ResponseEntity.ok(statuses);
   }
 }

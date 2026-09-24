@@ -29,7 +29,7 @@ class ProcessingRepositoryIT extends PostgresIntegrationSupport {
     eventId = UUID.randomUUID();
     envelope =
         new EventEnvelope(
-            1,
+            2,
             eventId,
             "order.created",
             "test",
@@ -38,7 +38,9 @@ class ProcessingRepositoryIT extends PostgresIntegrationSupport {
             Instant.now(),
             mapper.readTree("{\"orderId\":\"42\"}"),
             Map.of(),
-            null);
+            null,
+            "demo",
+            "test-producer");
     raw = mapper.writeValueAsString(envelope);
   }
 
@@ -48,7 +50,7 @@ class ProcessingRepositoryIT extends PostgresIntegrationSupport {
 
   private DeliveryCommand command() {
     return new DeliveryCommand(
-        1,
+        2,
         UUID.randomUUID(),
         eventId,
         "order.created",
@@ -58,7 +60,9 @@ class ProcessingRepositoryIT extends PostgresIntegrationSupport {
         List.of(new DeliveryTarget(TargetType.POSTGRES, "events", Map.of())),
         Map.of(),
         Instant.now(),
-        null);
+        null,
+        "demo",
+        "test-producer");
   }
 
   private DeadLetterEvent letter() throws Exception {
@@ -123,10 +127,10 @@ class ProcessingRepositoryIT extends PostgresIntegrationSupport {
     var letter = letter();
     repository.fail(eventId, first.leaseToken(), "INVALID", "invalid", letter);
     assertThat(claim().decision()).isEqualTo(ClaimDecision.DUPLICATE);
-    repository.replay(letter.deadLetterId());
+    repository.replay(letter.deadLetterId(), "demo");
     String replay =
         jdbc.sql(
-                "SELECT payload::text FROM processing_outbox WHERE topic='eventflow.events.raw.v1'")
+                "SELECT payload::text FROM processing_outbox WHERE topic='eventflow.events.raw.v2'")
             .query(String.class)
             .single();
     var replayClaim = repository.claim(eventId, "b".repeat(64), replay, 60);
@@ -134,8 +138,8 @@ class ProcessingRepositoryIT extends PostgresIntegrationSupport {
     assertThat(replayClaim.attempt()).isEqualTo(1);
     repository.complete(eventId, replayClaim.leaseToken(), "orders", 1, command());
     assertThat(repository.findDeadLetterStatus(letter.deadLetterId())).contains("RESOLVED");
-    assertThatThrownBy(() -> repository.replay(letter.deadLetterId()))
-        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> repository.replay(letter.deadLetterId(), "demo"))
+        .isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
   }
 
   @Test
@@ -157,7 +161,8 @@ class ProcessingRepositoryIT extends PostgresIntegrationSupport {
     assertThatThrownBy(
             () -> repository.complete(eventId, first.leaseToken(), "orders", 1, command()))
         .isInstanceOf(RuntimeException.class);
-    assertThat(repository.findStatus(eventId).orElseThrow().status()).isEqualTo("PROCESSING");
+    assertThat(repository.findStatus(eventId, "demo", null).orElseThrow().status())
+        .isEqualTo("PROCESSING");
     assertThat(count("processing_outbox")).isZero();
   }
 
@@ -199,5 +204,19 @@ class ProcessingRepositoryIT extends PostgresIntegrationSupport {
     repository.reject(letter);
     assertThat(count("processing_dead_letter")).isEqualTo(1);
     assertThat(count("processing_outbox")).isEqualTo(1);
+  }
+
+  @Test
+  void tenantAndOwnerCannotReadOrReplayForeignEvent() throws Exception {
+    var claim = claim();
+    assertThat(repository.findStatus(eventId, "other", null)).isEmpty();
+    assertThat(repository.findStatus(eventId, "demo", "other-producer")).isEmpty();
+    var letter = letter();
+    repository.fail(eventId, claim.leaseToken(), "INVALID", "invalid", letter);
+    assertThatThrownBy(() -> repository.replay(letter.deadLetterId(), "other"))
+        .isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+    assertThat(repository.findDeadLetterStatus(letter.deadLetterId())).contains("OPEN");
+    assertThat(repository.findStatus(eventId, "demo", "test-producer").orElseThrow().status())
+        .isEqualTo("FAILED");
   }
 }

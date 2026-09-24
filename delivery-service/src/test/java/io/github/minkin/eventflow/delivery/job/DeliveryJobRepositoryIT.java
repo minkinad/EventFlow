@@ -26,7 +26,7 @@ class DeliveryJobRepositoryIT extends PostgresIntegrationSupport {
     repository = transactional(new DeliveryJobRepository(jdbc, mapper));
     command =
         new DeliveryCommand(
-            1,
+            2,
             UUID.randomUUID(),
             UUID.randomUUID(),
             "order.created",
@@ -36,7 +36,9 @@ class DeliveryJobRepositoryIT extends PostgresIntegrationSupport {
             List.of(new DeliveryTarget(TargetType.POSTGRES, "events", Map.of())),
             Map.of(),
             Instant.now(),
-            null);
+            null,
+            "demo",
+            "test-producer");
     raw = mapper.writeValueAsString(command);
   }
 
@@ -81,7 +83,7 @@ class DeliveryJobRepositoryIT extends PostgresIntegrationSupport {
         .isInstanceOf(LeaseLostException.class);
     assertThat(count("delivery_dead_letter")).isZero();
     repository.succeeded(current);
-    assertThat(repository.findStatuses(command.eventId()).getFirst().status())
+    assertThat(repository.findStatuses(command.eventId(), "demo", null).getFirst().status())
         .isEqualTo("SUCCEEDED");
   }
 
@@ -110,7 +112,7 @@ class DeliveryJobRepositoryIT extends PostgresIntegrationSupport {
     var second = claim();
     repository.dead(second, "DELIVERY_ATTEMPTS_EXHAUSTED", "outage");
     var id = dlqId();
-    repository.replay(id);
+    repository.replay(id, "demo");
     assertThat(
             jdbc.sql("SELECT status FROM delivery_dead_letter WHERE id=:id")
                 .param("id", id)
@@ -127,7 +129,8 @@ class DeliveryJobRepositoryIT extends PostgresIntegrationSupport {
                 .query(String.class)
                 .single())
         .isEqualTo("RESOLVED");
-    assertThatThrownBy(() -> repository.replay(id)).isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> repository.replay(id, "demo"))
+        .isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
   }
 
   @Test
@@ -138,7 +141,7 @@ class DeliveryJobRepositoryIT extends PostgresIntegrationSupport {
         .update();
     assertThatThrownBy(() -> repository.dead(job, "DEAD", "error"))
         .isInstanceOf(RuntimeException.class);
-    assertThat(repository.findStatuses(command.eventId()).getFirst().status())
+    assertThat(repository.findStatuses(command.eventId(), "demo", null).getFirst().status())
         .isEqualTo("DELIVERING");
     assertThat(count("delivery_dead_letter")).isZero();
   }
@@ -167,7 +170,20 @@ class DeliveryJobRepositoryIT extends PostgresIntegrationSupport {
     repository.malformed("broken", "invalid");
     assertThat(count("delivery_dead_letter")).isEqualTo(1);
     assertThat(count("delivery_outbox")).isEqualTo(1);
-    assertThatThrownBy(() -> repository.replay(dlqId()))
-        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> repository.replay(dlqId(), "demo"))
+        .isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+  }
+
+  @Test
+  void foreignTenantCannotReadOrReplayDelivery() {
+    repository.accept(command, raw);
+    assertThat(repository.findStatuses(command.eventId(), "other", null)).isEmpty();
+    assertThat(repository.findStatuses(command.eventId(), "demo", "other-producer")).isEmpty();
+    repository.dead(claim(), "TEST", "terminal");
+    assertThatThrownBy(() -> repository.replay(dlqId(), "other"))
+        .isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+    assertThat(
+            repository.findStatuses(command.eventId(), "demo", "test-producer").getFirst().status())
+        .isEqualTo("DEAD");
   }
 }

@@ -15,7 +15,9 @@ public record EventEnvelope(
     Instant receivedAt,
     JsonNode payload,
     Map<String, String> metadata,
-    String traceparent) {
+    String traceparent,
+    String tenantId,
+    String producerId) {
   public EventEnvelope {
     metadata = metadata == null ? Map.of() : Map.copyOf(metadata);
   }

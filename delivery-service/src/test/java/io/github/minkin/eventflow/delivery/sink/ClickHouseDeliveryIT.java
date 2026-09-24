@@ -53,7 +53,7 @@ class ClickHouseDeliveryIT {
     var second = new DeliveryTarget(TargetType.CLICKHOUSE, "second", Map.of());
     var command =
         new DeliveryCommand(
-            1,
+            2,
             UUID.randomUUID(),
             UUID.randomUUID(),
             "order.created",
@@ -63,7 +63,9 @@ class ClickHouseDeliveryIT {
             List.of(first, second),
             Map.of(),
             Instant.now(),
-            null);
+            null,
+            "demo",
+            "test-producer");
     var job = new DeliveryJob(UUID.randomUUID(), command, first, 1, UUID.randomUUID());
     adapter.deliver(job);
     adapter.deliver(job);

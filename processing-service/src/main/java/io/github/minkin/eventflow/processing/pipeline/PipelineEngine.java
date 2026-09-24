@@ -20,16 +20,17 @@ public class PipelineEngine {
     this.enrichmentGateway = enrichmentGateway;
   }
 
-  public PipelineResult execute(PipelineDefinition pipeline, JsonNode input) {
-    var result = run(pipeline, input, false);
+  public PipelineResult execute(String tenant, PipelineDefinition pipeline, JsonNode input) {
+    var result = run(tenant, pipeline, input, false);
     return new PipelineResult(result.payload(), result.selectedRoutes());
   }
 
-  public DryRunResult dryRun(PipelineDefinition pipeline, JsonNode input) {
-    return run(pipeline, input, true);
+  public DryRunResult dryRun(String tenant, PipelineDefinition pipeline, JsonNode input) {
+    return run(tenant, pipeline, input, true);
   }
 
-  private DryRunResult run(PipelineDefinition pipeline, JsonNode input, boolean dryRun) {
+  private DryRunResult run(
+      String tenant, PipelineDefinition pipeline, JsonNode input, boolean dryRun) {
     if (input == null || input.isNull()) {
       throw new IllegalArgumentException("A test payload is required");
     }
@@ -45,7 +46,7 @@ public class PipelineEngine {
       String status = "SUCCEEDED";
       try {
         switch (type) {
-          case "validate" -> validate(step, payload);
+          case "validate" -> validate(tenant, step, payload);
           case "enrich" -> {
             if (dryRun) {
               status = "SKIPPED";
@@ -54,7 +55,8 @@ public class PipelineEngine {
                       + index
                       + " was skipped; this dry-run is incomplete");
             } else {
-              payload = enrichmentGateway.enrich(required(step.source(), "source"), payload);
+              payload =
+                  enrichmentGateway.enrich(tenant, required(step.source(), "source"), payload);
             }
           }
           case "route" -> targets.add(route(step));
@@ -89,11 +91,11 @@ public class PipelineEngine {
         System.nanoTime() - started);
   }
 
-  private void validate(PipelineStepDefinition step, JsonNode payload) {
+  private void validate(String tenant, PipelineStepDefinition step, JsonNode payload) {
     String name = required(step.schema(), "schema");
     JsonNode definition =
         repository
-            .findSchema(name)
+            .findSchema(tenant, name)
             .orElseThrow(
                 () ->
                     new PipelineException("SCHEMA_NOT_FOUND", "Schema not found: " + name, false));

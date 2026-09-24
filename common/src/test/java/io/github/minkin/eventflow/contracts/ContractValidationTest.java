@@ -17,7 +17,7 @@ class ContractValidationTest {
   void contractsRoundTripWithoutPersistenceTypes() throws Exception {
     var event =
         new EventEnvelope(
-            1,
+            2,
             UUID.randomUUID(),
             "order.created",
             "test",
@@ -26,11 +26,13 @@ class ContractValidationTest {
             Instant.now(),
             mapper.readTree("{}"),
             Map.of(),
-            null);
+            null,
+            "demo",
+            "test-producer");
     ContractValidation.validate(event);
     assertThat(mapper.readValue(mapper.writeValueAsString(event), EventEnvelope.class))
         .isEqualTo(event);
-    var command = command(1, List.of(new DeliveryTarget(TargetType.POSTGRES, "events", null)));
+    var command = command(2, List.of(new DeliveryTarget(TargetType.POSTGRES, "events", null)));
     ContractValidation.validate(command);
     assertThat(mapper.readValue(mapper.writeValueAsString(command), DeliveryCommand.class))
         .isEqualTo(command);
@@ -44,7 +46,7 @@ class ContractValidationTest {
             () ->
                 ContractValidation.validate(
                     new EventEnvelope(
-                        1,
+                        2,
                         null,
                         "x",
                         "x",
@@ -53,14 +55,16 @@ class ContractValidationTest {
                         Instant.now(),
                         mapper.createObjectNode(),
                         null,
-                        null)))
-        .isInstanceOf(IllegalArgumentException.class);
-    assertThatThrownBy(() -> ContractValidation.validate(command(2, List.of())))
+                        null,
+                        "demo",
+                        "test-producer")))
         .isInstanceOf(IllegalArgumentException.class);
     assertThatThrownBy(() -> ContractValidation.validate(command(1, List.of())))
         .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> ContractValidation.validate(command(2, List.of())))
+        .isInstanceOf(IllegalArgumentException.class);
     var route = new DeliveryTarget(TargetType.POSTGRES, "events", Map.of());
-    assertThatThrownBy(() -> ContractValidation.validate(command(1, List.of(route, route))))
+    assertThatThrownBy(() -> ContractValidation.validate(command(2, List.of(route, route))))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
@@ -71,11 +75,13 @@ class ContractValidationTest {
         UUID.randomUUID(),
         "order.created",
         "orders",
-        1,
+        2,
         mapper.createObjectNode(),
         targets,
         null,
         Instant.now(),
-        null);
+        null,
+        "demo",
+        "test-producer");
   }
 }

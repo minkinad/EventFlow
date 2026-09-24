@@ -18,7 +18,7 @@ public class PipelineDefinitionValidator {
     this.repository = repository;
   }
 
-  public void validate(PipelineDefinition pipeline) {
+  public void validate(String tenant, PipelineDefinition pipeline) {
     requireIdentifier(pipeline.name(), "name");
     requireIdentifier(pipeline.eventType(), "eventType");
     if (pipeline.version() < 1) {
@@ -40,7 +40,7 @@ public class PipelineDefinitionValidator {
             throw new IllegalArgumentException("Validation cannot run after a route step");
           }
           String schema = required(step.schema(), "steps[" + index + "].schema");
-          if (repository.findSchema(schema).isEmpty()) {
+          if (repository.findSchema(tenant, schema).isEmpty()) {
             throw new IllegalArgumentException("Active schema not found: " + schema);
           }
         }

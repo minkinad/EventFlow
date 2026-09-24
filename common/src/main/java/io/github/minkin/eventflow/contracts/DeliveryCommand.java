@@ -17,7 +17,9 @@ public record DeliveryCommand(
     List<DeliveryTarget> targets,
     Map<String, String> metadata,
     Instant processedAt,
-    String traceparent) {
+    String traceparent,
+    String tenantId,
+    String producerId) {
   public DeliveryCommand {
     targets = targets == null ? List.of() : List.copyOf(targets);
     metadata = metadata == null ? Map.of() : Map.copyOf(metadata);

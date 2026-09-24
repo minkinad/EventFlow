@@ -21,7 +21,7 @@ class PipelineDefinitionValidatorTest {
             "order.created",
             List.of(new PipelineStepDefinition("enrich", null, "customers", null, null, Map.of())));
 
-    assertThatThrownBy(() -> validator.validate(pipeline))
+    assertThatThrownBy(() -> validator.validate("demo", pipeline))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("route");
   }
@@ -42,7 +42,7 @@ class PipelineDefinitionValidatorTest {
                     "http://internal.example/events",
                     Map.of())));
 
-    assertThatThrownBy(() -> validator.validate(pipeline))
+    assertThatThrownBy(() -> validator.validate("demo", pipeline))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("HTTPS");
   }

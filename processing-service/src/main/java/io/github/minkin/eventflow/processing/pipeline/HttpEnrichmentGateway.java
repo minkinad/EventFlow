@@ -21,7 +21,7 @@ public class HttpEnrichmentGateway implements EnrichmentGateway {
   @Override
   @Retry(name = "enrichment")
   @CircuitBreaker(name = "enrichment")
-  public JsonNode enrich(String source, JsonNode payload) {
+  public JsonNode enrich(String tenant, String source, JsonNode payload) {
     JsonNode key = payload.path("customerId");
     if (key.isMissingNode() || key.asText().isBlank()) {
       throw new PipelineException(
@@ -31,7 +31,11 @@ public class HttpEnrichmentGateway implements EnrichmentGateway {
       JsonNode value =
           restClient
               .get()
-              .uri("/api/v1/enrichments/{source}/{key}", source, key.asText())
+              .uri(
+                  "/api/v1/tenants/{tenant}/enrichments/{source}/{key}",
+                  tenant,
+                  source,
+                  key.asText())
               .retrieve()
               .body(JsonNode.class);
       ObjectNode enriched = payload.deepCopy();

@@ -27,12 +27,14 @@ public class PostgresDeliveryAdapter implements DeliveryAdapter {
     jdbc.sql(
             """
                         INSERT INTO operational_event
-                            (event_id, destination, event_type, pipeline, payload, processed_at, delivered_at)
+                            (event_id, destination, event_type, pipeline, payload, processed_at, delivered_at, tenant_id, producer_id)
                         VALUES (:eventId, :destination, :eventType, :pipeline,
-                                CAST(:payload AS jsonb), :processedAt, now())
+                                CAST(:payload AS jsonb), :processedAt, now(), :tenant, :producer)
                         ON CONFLICT (event_id, destination) DO UPDATE
                         SET payload=EXCLUDED.payload, processed_at=EXCLUDED.processed_at, delivered_at=now()
                         """)
+        .param("tenant", job.command().tenantId())
+        .param("producer", job.command().producerId())
         .param("eventId", job.command().eventId())
         .param("destination", job.target().destination())
         .param("eventType", job.command().eventType())

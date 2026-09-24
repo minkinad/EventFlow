@@ -17,11 +17,30 @@ import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class PipelineApiTest {
+  @org.junit.jupiter.api.AfterEach
+  void clearSecurity() {
+    org.springframework.security.core.context.SecurityContextHolder.clearContext();
+  }
+
   @Test
   void staleChangeReturns409AndRevisionIsRequired() throws Exception {
+    var jwt =
+        org.springframework.security.oauth2.jwt.Jwt.withTokenValue("test")
+            .header("alg", "RS256")
+            .subject("test-producer")
+            .claim("tenant_id", "demo")
+            .build();
+    org.springframework.security.core.context.SecurityContextHolder.getContext()
+        .setAuthentication(
+            new org.springframework.security.oauth2.server.resource.authentication
+                .JwtAuthenticationToken(
+                jwt,
+                java.util.List.of(
+                    new org.springframework.security.core.authority.SimpleGrantedAuthority(
+                        "ROLE_ADMIN"))));
     var repository = mock(PipelineRepository.class);
     UUID id = UUID.randomUUID();
-    when(repository.disable(id, 7, "pause")).thenThrow(new PipelineConflictException());
+    when(repository.disable("demo", id, 7, "pause")).thenThrow(new PipelineConflictException());
     var controller =
         new PipelineAdminController(
             repository,

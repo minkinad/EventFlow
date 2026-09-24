@@ -19,7 +19,7 @@ public class DeliveryDlqController {
 
   @PostMapping("/{id}/replay")
   ResponseEntity<Void> replay(@PathVariable UUID id) {
-    repository.replay(id);
+    repository.replay(id, io.github.minkin.eventflow.security.Caller.current().tenant());
     return ResponseEntity.accepted().build();
   }
 }

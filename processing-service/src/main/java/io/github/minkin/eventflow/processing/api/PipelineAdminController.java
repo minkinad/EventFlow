@@ -46,64 +46,68 @@ public class PipelineAdminController {
   @PutMapping("/schemas/{name}")
   ResponseEntity<Void> putSchema(@PathVariable String name, @RequestBody JsonNode schema) {
     schemaValidator.validate(name, schema);
-    repository.saveSchema(name, schema);
+    repository.saveSchema(tenant(), name, schema);
     return ResponseEntity.noContent().build();
   }
 
   @PostMapping("/pipelines")
   ResponseEntity<PipelineSummary> createPipeline(@RequestBody JsonNode json) {
-    var id = repository.saveDraft(codec.decode(json));
+    var id = repository.saveDraft(tenant(), codec.decode(json));
     return ResponseEntity.created(URI.create("/api/v1/pipelines/" + id))
-        .body(repository.summary(id));
+        .body(repository.summary(tenant(), id));
   }
 
   @GetMapping("/pipelines/{id}")
   PipelineSummary getPipeline(@PathVariable UUID id) {
-    return repository.summary(id);
+    return repository.summary(tenant(), id);
   }
 
   @PutMapping("/pipelines/{id}")
   PipelineSummary edit(
       @PathVariable UUID id, @RequestParam long revision, @RequestBody JsonNode json) {
-    return repository.editDraft(id, revision, codec.decode(json));
+    return repository.editDraft(tenant(), id, revision, codec.decode(json));
   }
 
   @PostMapping("/pipelines/{id}/validate")
   PipelineSummary validate(@PathVariable UUID id, @RequestParam long revision) {
-    validator.validate(definition(id));
-    return repository.validated(id, revision);
+    validator.validate(tenant(), definition(id));
+    return repository.validated(tenant(), id, revision);
   }
 
   @PostMapping("/pipelines/{id}/dry-run")
   DryRunResult dryRun(@PathVariable UUID id, @RequestBody JsonNode payload) {
     var pipeline = definition(id);
-    validator.validate(pipeline);
-    return engine.dryRun(pipeline, payload);
+    validator.validate(tenant(), pipeline);
+    return engine.dryRun(tenant(), pipeline, payload);
   }
 
   @PostMapping("/pipelines/{id}/activate")
   PipelineSummary activate(
       @PathVariable UUID id, @RequestParam long revision, @RequestBody ChangeReason change) {
-    validator.validate(definition(id));
-    return repository.activate(id, revision, false, change.reason());
+    validator.validate(tenant(), definition(id));
+    return repository.activate(tenant(), id, revision, false, change.reason());
   }
 
   @PostMapping("/pipelines/{id}/rollback")
   PipelineSummary rollback(
       @PathVariable UUID id, @RequestParam long revision, @RequestBody ChangeReason change) {
-    validator.validate(definition(id));
-    return repository.activate(id, revision, true, change.reason());
+    validator.validate(tenant(), definition(id));
+    return repository.activate(tenant(), id, revision, true, change.reason());
   }
 
   @PostMapping("/pipelines/{id}/disable")
   PipelineSummary disable(
       @PathVariable UUID id, @RequestParam long revision, @RequestBody ChangeReason change) {
-    return repository.disable(id, revision, change.reason());
+    return repository.disable(tenant(), id, revision, change.reason());
   }
 
   private PipelineDefinition definition(UUID id) {
-    repository.summary(id);
-    return repository.findById(id).orElseThrow();
+    repository.summary(tenant(), id);
+    return repository.findById(tenant(), id).orElseThrow();
+  }
+
+  private String tenant() {
+    return io.github.minkin.eventflow.security.Caller.current().tenant();
   }
 
   public record ChangeReason(String reason) {}

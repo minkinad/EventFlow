@@ -29,11 +29,12 @@ class PipelineEngineTest {
 
   @Test
   void validationPrecedesRoutingWithoutChangingInput() throws Exception {
-    when(repository.findSchema("order-v1"))
+    when(repository.findSchema("demo", "order-v1"))
         .thenReturn(Optional.of(mapper.readTree("{\"type\":\"object\",\"required\":[\"id\"]}")));
     var input = mapper.readTree("{\"id\":\"42\"}");
     var result =
         engine.execute(
+            "demo",
             pipeline(
                 new PipelineStepDefinition("validate", "order-v1", null, null, null, null),
                 route()),
@@ -47,11 +48,12 @@ class PipelineEngineTest {
 
   @Test
   void invalidPayloadNeverEnrichesOrRoutes() throws Exception {
-    when(repository.findSchema("order-v1"))
+    when(repository.findSchema("demo", "order-v1"))
         .thenReturn(Optional.of(mapper.readTree("{\"type\":\"object\",\"required\":[\"id\"]}")));
     assertThatThrownBy(
             () ->
                 engine.execute(
+                    "demo",
                     pipeline(
                         new PipelineStepDefinition("validate", "order-v1", null, null, null, null),
                         route()),
@@ -66,6 +68,7 @@ class PipelineEngineTest {
     assertThatThrownBy(
             () ->
                 engine.execute(
+                    "demo",
                     pipeline(
                         new PipelineStepDefinition("validate", "missing", null, null, null, null),
                         route()),
@@ -74,28 +77,31 @@ class PipelineEngineTest {
     assertThatThrownBy(
             () ->
                 engine.execute(
+                    "demo",
                     pipeline(new PipelineStepDefinition("script", null, null, null, null, null)),
                     mapper.createObjectNode()))
         .isInstanceOf(PipelineException.class);
     assertThatThrownBy(
             () ->
                 engine.execute(
+                    "demo",
                     pipeline(
                         new PipelineStepDefinition("route", null, null, "UNKNOWN", "events", null)),
                     mapper.createObjectNode()))
         .isInstanceOf(PipelineException.class);
-    assertThatThrownBy(() -> engine.execute(pipeline(), mapper.createObjectNode()))
+    assertThatThrownBy(() -> engine.execute("demo", pipeline(), mapper.createObjectNode()))
         .isInstanceOf(PipelineException.class)
         .hasMessageContaining("no delivery");
   }
 
   @Test
   void enrichmentFailurePreservesRetryTaxonomy() {
-    when(enrichment.enrich("customers", mapper.createObjectNode()))
+    when(enrichment.enrich("demo", "customers", mapper.createObjectNode()))
         .thenThrow(new PipelineException("TIMEOUT", "timeout", true));
     assertThatThrownBy(
             () ->
                 engine.execute(
+                    "demo",
                     pipeline(
                         new PipelineStepDefinition("enrich", null, "customers", null, null, null),
                         route()),

@@ -40,7 +40,7 @@ class OutboxKafkaIT extends PostgresIntegrationSupport {
             Instant.now(),
             mapper.createObjectNode(),
             Map.of());
-    service.ingest(event, null);
+    service.ingest(event, null, "demo", "test-producer");
     var outbox = transactional(new OutboxRepository(jdbc));
     var first = outbox.claim(1, "crashed-relay", 60).getFirst();
     var factory =
@@ -86,7 +86,7 @@ class OutboxKafkaIT extends PostgresIntegrationSupport {
                 });
       }
       assertThat(records).hasSize(2).allMatch(first.payload()::equals);
-      assertThat(repository.findStatus(event.eventId()).orElseThrow().status())
+      assertThat(repository.findStatus(event.eventId(), "demo", null).orElseThrow().status())
           .isEqualTo("PUBLISHED");
     } finally {
       factory.destroy();

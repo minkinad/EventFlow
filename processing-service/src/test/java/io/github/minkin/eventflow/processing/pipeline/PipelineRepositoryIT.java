@@ -28,25 +28,27 @@ class PipelineRepositoryIT extends PostgresIntegrationSupport {
   @Test
   void immutableSchemaCanBeRepublishedIdenticallyButNotOverwritten() throws Exception {
     var schema = mapper.readTree("{\"type\":\"string\"}");
-    repository.saveSchema("test-v1", schema);
-    repository.saveSchema("test-v1", schema);
-    assertThat(repository.findSchema("test-v1")).contains(schema);
+    repository.saveSchema("demo", "test-v1", schema);
+    repository.saveSchema("demo", "test-v1", schema);
+    assertThat(repository.findSchema("demo", "test-v1")).contains(schema);
     assertThatThrownBy(
-            () -> repository.saveSchema("test-v1", mapper.createObjectNode().put("type", "number")))
+            () ->
+                repository.saveSchema(
+                    "demo", "test-v1", mapper.createObjectNode().put("type", "number")))
         .isInstanceOf(IllegalArgumentException.class);
-    assertThat(repository.findSchema("test-v1")).contains(schema);
+    assertThat(repository.findSchema("demo", "test-v1")).contains(schema);
   }
 
   @Test
   void draftIsInactiveUntilAtomicActivation() {
     var definition = version(2);
-    var id = repository.saveDraft(definition);
-    assertThat(repository.findSummary(id).orElseThrow().active()).isFalse();
-    assertThat(repository.findById(id)).contains(definition);
-    assertThat(repository.findActive("order.created").orElseThrow().version()).isEqualTo(1);
-    repository.validated(id, 0);
-    repository.activate(id, 1, false, "test activation");
-    assertThat(repository.findActive("order.created")).contains(definition);
+    var id = repository.saveDraft("demo", definition);
+    assertThat(repository.findSummary("demo", id).orElseThrow().active()).isFalse();
+    assertThat(repository.findById("demo", id)).contains(definition);
+    assertThat(repository.findActive("demo", "order.created").orElseThrow().version()).isEqualTo(1);
+    repository.validated("demo", id, 0);
+    repository.activate("demo", id, 1, false, "test activation");
+    assertThat(repository.findActive("demo", "order.created")).contains(definition);
     assertThat(
             jdbc.sql("SELECT count(*) FROM pipeline_definition WHERE enabled")
                 .query(Long.class)
@@ -56,39 +58,39 @@ class PipelineRepositoryIT extends PostgresIntegrationSupport {
 
   @Test
   void activationFailureRestoresPreviousActiveVersion() {
-    var id = repository.saveDraft(version(2));
+    var id = repository.saveDraft("demo", version(2));
     jdbc.sql(
             "ALTER TABLE pipeline_definition ADD CONSTRAINT injected_failure CHECK (NOT enabled OR version=1)")
         .update();
-    repository.validated(id, 0);
-    assertThatThrownBy(() -> repository.activate(id, 1, false, "test failure"))
+    repository.validated("demo", id, 0);
+    assertThatThrownBy(() -> repository.activate("demo", id, 1, false, "test failure"))
         .isInstanceOf(RuntimeException.class);
-    assertThat(repository.findActive("order.created").orElseThrow().version()).isEqualTo(1);
+    assertThat(repository.findActive("demo", "order.created").orElseThrow().version()).isEqualTo(1);
   }
 
   @Test
   void staleRevisionAndEditingActiveVersionAreRejected() {
-    var id = repository.saveDraft(version(2));
-    var edited = repository.editDraft(id, 0, version(2));
+    var id = repository.saveDraft("demo", version(2));
+    var edited = repository.editDraft("demo", id, 0, version(2));
     assertThat(edited.revision()).isEqualTo(1);
-    assertThatThrownBy(() -> repository.validated(id, 0))
+    assertThatThrownBy(() -> repository.validated("demo", id, 0))
         .isInstanceOf(PipelineConflictException.class);
-    repository.validated(id, 1);
-    repository.activate(id, 2, false, "Activate reviewed draft");
-    assertThatThrownBy(() -> repository.editDraft(id, 3, version(2)))
+    repository.validated("demo", id, 1);
+    repository.activate("demo", id, 2, false, "Activate reviewed draft");
+    assertThatThrownBy(() -> repository.editDraft("demo", id, 3, version(2)))
         .isInstanceOf(PipelineConflictException.class);
   }
 
   @Test
   void rollbackIsAtomicAndAuditedAndHistoryCannotBeChanged() {
     var seed = java.util.UUID.fromString("10000000-0000-0000-0000-000000000001");
-    var id = repository.saveDraft(version(2));
-    repository.validated(id, 0);
-    repository.activate(id, 1, false, "Roll forward");
-    assertThat(repository.summary(seed).state()).isEqualTo("SUPERSEDED");
-    repository.activate(seed, 1, true, "Revert downstream incompatibility");
-    assertThat(repository.findActive("order.created").orElseThrow().version()).isEqualTo(1);
-    assertThat(repository.summary(id).state()).isEqualTo("SUPERSEDED");
+    var id = repository.saveDraft("demo", version(2));
+    repository.validated("demo", id, 0);
+    repository.activate("demo", id, 1, false, "Roll forward");
+    assertThat(repository.summary("demo", seed).state()).isEqualTo("SUPERSEDED");
+    repository.activate("demo", seed, 1, true, "Revert downstream incompatibility");
+    assertThat(repository.findActive("demo", "order.created").orElseThrow().version()).isEqualTo(1);
+    assertThat(repository.summary("demo", id).state()).isEqualTo("SUPERSEDED");
     assertThat(
             jdbc.sql("SELECT count(*) FROM audit_log WHERE action='PIPELINE_ROLLBACK'")
                 .query(Long.class)
@@ -98,19 +100,19 @@ class PipelineRepositoryIT extends PostgresIntegrationSupport {
         .isInstanceOf(RuntimeException.class);
     assertThatThrownBy(() -> jdbc.sql("UPDATE audit_log SET reason='changed'").update())
         .isInstanceOf(RuntimeException.class);
-    repository.disable(seed, 2, "Pause this pipeline");
-    assertThat(repository.findActive("order.created")).isEmpty();
+    repository.disable("demo", seed, 2, "Pause this pipeline");
+    assertThat(repository.findActive("demo", "order.created")).isEmpty();
   }
 
   @Test
   void concurrentActivationOfSameRevisionHasOneWinner() throws Exception {
-    var id = repository.saveDraft(version(2));
-    repository.validated(id, 0);
+    var id = repository.saveDraft("demo", version(2));
+    repository.validated("demo", id, 0);
     try (var executor = java.util.concurrent.Executors.newFixedThreadPool(2)) {
       java.util.concurrent.Callable<Boolean> activate =
           () -> {
             try {
-              repository.activate(id, 1, false, "Concurrent activation");
+              repository.activate("demo", id, 1, false, "Concurrent activation");
               return true;
             } catch (PipelineConflictException conflict) {
               return false;
@@ -139,7 +141,7 @@ class PipelineRepositoryIT extends PostgresIntegrationSupport {
             java.util.List.of(
                 new PipelineStepDefinition("enrich", null, "customers", null, null, null),
                 new PipelineStepDefinition("route", null, null, "POSTGRES", "events", null)));
-    var result = engine.dryRun(pipeline, mapper.createObjectNode());
+    var result = engine.dryRun("demo", pipeline, mapper.createObjectNode());
     assertThat(result.valid()).isFalse();
     assertThat(result.warnings()).hasSize(1);
     assertThat(result.executedSteps()).hasSize(2);
@@ -148,5 +150,28 @@ class PipelineRepositoryIT extends PostgresIntegrationSupport {
     org.mockito.Mockito.verifyNoInteractions(gateway);
     assertThat(count("processing_outbox")).isZero();
     assertThat(count("audit_log")).isZero();
+  }
+
+  @Test
+  void schemasNamesAndActivationAreIsolatedByTenant() throws Exception {
+    var a = mapper.readTree("{\"type\":\"string\"}");
+    var b = mapper.readTree("{\"type\":\"number\"}");
+    repository.saveSchema("demo", "same-name", a);
+    repository.saveSchema("other", "same-name", b);
+    assertThat(repository.findSchema("demo", "same-name")).contains(a);
+    assertThat(repository.findSchema("other", "same-name")).contains(b);
+    assertThat(repository.findSchema("other", "order-v1")).isEmpty();
+    var id = repository.saveDraft("other", version(1));
+    repository.validated("other", id, 0);
+    repository.activate("other", id, 1, false, "Other tenant activation");
+    assertThat(repository.findActive("demo", "order.created")).isPresent();
+    assertThat(repository.findActive("other", "order.created")).isPresent();
+    assertThat(count("pipeline_definition")).isEqualTo(2);
+    assertThat(repository.findSummary("demo", id)).isEmpty();
+    assertThatThrownBy(() -> repository.disable("demo", id, 2, "Cross tenant"))
+        .isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+    assertThatThrownBy(() -> repository.editDraft("demo", id, 2, version(1)))
+        .isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+    assertThat(repository.summary("other", id).state()).isEqualTo("ACTIVE");
   }
 }

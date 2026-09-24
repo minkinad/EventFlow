@@ -6,7 +6,9 @@ public final class ContractValidation {
 
   public static void validate(EventEnvelope event) {
     require(event != null, "Missing event");
-    require(event.contractVersion() == 1, "Unsupported event contract version");
+    require(event.contractVersion() == 2, "Unsupported event contract version");
+    text(event.tenantId(), 120, "tenantId");
+    text(event.producerId(), 200, "producerId");
     require(event.eventId() != null, "Missing eventId");
     text(event.eventType(), 120, "eventType");
     text(event.source(), 120, "source");
@@ -17,7 +19,9 @@ public final class ContractValidation {
 
   public static void validate(DeliveryCommand command) {
     require(command != null, "Missing delivery command");
-    require(command.contractVersion() == 1, "Unsupported delivery contract version");
+    require(command.contractVersion() == 2, "Unsupported delivery contract version");
+    text(command.tenantId(), 120, "tenantId");
+    text(command.producerId(), 200, "producerId");
     require(command.commandId() != null && command.eventId() != null, "Missing delivery identity");
     text(command.eventType(), 120, "eventType");
     text(command.pipeline(), 120, "pipeline");

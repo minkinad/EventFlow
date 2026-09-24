@@ -33,10 +33,16 @@ spring:
     timeout-per-shutdown-phase: 30s
 
 eventflow:
+  security:
+    issuer: ${JWT_ISSUER}
+    jwk-set-uri: ${JWT_JWK_SET_URI}
+    audience: ${JWT_AUDIENCE:eventflow-ingestion}
   rate-limit:
     capacity: ${RATE_LIMIT_CAPACITY:100}
     refill-per-second: ${RATE_LIMIT_REFILL_PER_SECOND:10}
-    fail-open: ${RATE_LIMIT_FAIL_OPEN:true}
+    fail-open: ${RATE_LIMIT_FAIL_OPEN:false}
+    tenant-capacity: ${RATE_LIMIT_TENANT_CAPACITY:1000}
+    tenant-refill-per-second: ${RATE_LIMIT_TENANT_REFILL_PER_SECOND:100}
   outbox:
     poll-interval: 250ms
     batch-size: 100

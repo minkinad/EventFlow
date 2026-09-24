@@ -80,7 +80,7 @@ class HttpDeliveryIT {
       UUID eventId = UUID.randomUUID();
       var command =
           new DeliveryCommand(
-              1,
+              2,
               UUID.randomUUID(),
               eventId,
               "order.created",
@@ -90,7 +90,9 @@ class HttpDeliveryIT {
               List.of(),
               Map.of(),
               Instant.now(),
-              null);
+              null,
+              "demo",
+              "test-producer");
       var success =
           new DeliveryJob(
               UUID.randomUUID(),

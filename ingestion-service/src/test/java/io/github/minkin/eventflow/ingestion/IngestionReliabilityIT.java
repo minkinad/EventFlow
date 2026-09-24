@@ -41,8 +41,8 @@ class IngestionReliabilityIT extends PostgresIntegrationSupport {
 
   @Test
   void responseLostAfterCommitRetainsIdentityAndAcceptanceTime() {
-    var first = service.ingest(event, null);
-    var second = service.ingest(event, null);
+    var first = service.ingest(event, null, "demo", "test-producer");
+    var second = service.ingest(event, null, "demo", "test-producer");
     assertThat(first.duplicate()).isFalse();
     assertThat(second.duplicate()).isTrue();
     // PostgreSQL timestamps retain microseconds.
@@ -56,14 +56,15 @@ class IngestionReliabilityIT extends PostgresIntegrationSupport {
   void failedOutboxInsertRollsBackAcceptedEvent() {
     jdbc.sql("ALTER TABLE ingestion_outbox ADD CONSTRAINT inject_failure CHECK (topic='never')")
         .update();
-    assertThatThrownBy(() -> service.ingest(event, null)).isInstanceOf(RuntimeException.class);
+    assertThatThrownBy(() -> service.ingest(event, null, "demo", "test-producer"))
+        .isInstanceOf(RuntimeException.class);
     assertThat(count("ingested_event")).isZero();
     assertThat(count("ingestion_outbox")).isZero();
   }
 
   @Test
   void canonicalDuplicateAndConflict() throws Exception {
-    service.ingest(event, null);
+    service.ingest(event, null, "demo", "test-producer");
     var reordered =
         new EventSubmission(
             event.eventId(),
@@ -73,7 +74,7 @@ class IngestionReliabilityIT extends PostgresIntegrationSupport {
             event.occurredAt(),
             mapper.readTree("{\"b\":2,\"a\":1}"),
             Map.of());
-    assertThat(service.ingest(reordered, null).duplicate()).isTrue();
+    assertThat(service.ingest(reordered, null, "demo", "test-producer").duplicate()).isTrue();
     var changed =
         new EventSubmission(
             event.eventId(),
@@ -83,13 +84,13 @@ class IngestionReliabilityIT extends PostgresIntegrationSupport {
             event.occurredAt(),
             mapper.readTree("{\"b\":3}"),
             Map.of());
-    assertThatThrownBy(() -> service.ingest(changed, null))
+    assertThatThrownBy(() -> service.ingest(changed, null, "demo", "test-producer"))
         .isInstanceOf(IdempotencyConflictException.class);
   }
 
   @Test
   void crashAfterPublishCanRepublishButStaleOwnerCannotFinalizeOrRelease() {
-    service.ingest(event, null);
+    service.ingest(event, null, "demo", "test-producer");
     var old = outbox.claim(1, "old-token", 60).getFirst();
     // The broker accepted the payload, but the relay crashed before recording confirmation.
     jdbc.sql("UPDATE ingestion_outbox SET claimed_until=now() - interval '1 second'").update();
@@ -99,7 +100,7 @@ class IngestionReliabilityIT extends PostgresIntegrationSupport {
     outbox.release(old.id(), "old-token", "late failure");
     assertThat(outbox.claim(1, "third-token", 60)).isEmpty();
     assertThat(outbox.markPublished(current.id(), "new-token")).isTrue();
-    assertThat(repository.findStatus(event.eventId()).orElseThrow().status())
+    assertThat(repository.findStatus(event.eventId(), "demo", null).orElseThrow().status())
         .isEqualTo("PUBLISHED");
     assertThat(outbox.claim(1, "next-token", 60)).isEmpty();
   }
@@ -107,11 +108,25 @@ class IngestionReliabilityIT extends PostgresIntegrationSupport {
   @Test
   void concurrentDuplicateSubmissionsCommitOneOutbox() throws Exception {
     try (var executor = Executors.newFixedThreadPool(2)) {
-      var a = executor.submit(() -> service.ingest(event, null));
-      var b = executor.submit(() -> service.ingest(event, null));
+      var a = executor.submit(() -> service.ingest(event, null, "demo", "test-producer"));
+      var b = executor.submit(() -> service.ingest(event, null, "demo", "test-producer"));
       assertThat(a.get().duplicate()).isNotEqualTo(b.get().duplicate());
     }
     assertThat(count("ingested_event")).isEqualTo(1);
+    assertThat(count("ingestion_outbox")).isEqualTo(1);
+  }
+
+  @Test
+  void ownershipIsRequiredForReadsAndIdempotentAcceptance() {
+    service.ingest(event, null, "demo", "owner");
+    assertThat(repository.findStatus(event.eventId(), "other", null)).isEmpty();
+    assertThat(repository.findStatus(event.eventId(), "demo", "intruder")).isEmpty();
+    assertThat(repository.findStatus(event.eventId(), "demo", "owner")).isPresent();
+    assertThat(repository.findStatus(event.eventId(), "demo", null)).isPresent();
+    assertThatThrownBy(() -> service.ingest(event, null, "other", "owner"))
+        .isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+    assertThatThrownBy(() -> service.ingest(event, null, "demo", "intruder"))
+        .isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
     assertThat(count("ingestion_outbox")).isEqualTo(1);
   }
 }

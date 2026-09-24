@@ -91,17 +91,17 @@ public class ProcessingCoordinator {
     try {
       var pipeline =
           pipelineRepository
-              .findActive(event.eventType())
+              .findActive(event.tenantId(), event.eventType())
               .orElseThrow(
                   () ->
                       new PipelineException(
                           "PIPELINE_NOT_FOUND",
                           "No active pipeline for eventType " + event.eventType(),
                           false));
-      var result = pipelineEngine.execute(pipeline, event.payload());
+      var result = pipelineEngine.execute(event.tenantId(), pipeline, event.payload());
       var command =
           new DeliveryCommand(
-              1,
+              2,
               UUID.randomUUID(),
               event.eventId(),
               event.eventType(),
@@ -111,7 +111,9 @@ public class ProcessingCoordinator {
               result.targets(),
               event.metadata(),
               Instant.now(),
-              event.traceparent());
+              event.traceparent(),
+              event.tenantId(),
+              event.producerId());
       processingRepository.complete(
           event.eventId(), claim.leaseToken(), pipeline.name(), pipeline.version(), command);
       succeeded.increment();

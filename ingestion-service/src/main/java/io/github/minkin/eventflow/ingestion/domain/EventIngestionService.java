@@ -37,12 +37,13 @@ public class EventIngestionService {
   }
 
   @Transactional
-  public IngestionResponse ingest(EventSubmission submission, String traceparent) {
+  public IngestionResponse ingest(
+      EventSubmission submission, String traceparent, String tenant, String producer) {
     Instant acceptedAt = clock.instant().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
     String contentHash = canonicalJson.sha256(objectMapper.valueToTree(submission));
     EventEnvelope envelope =
         new EventEnvelope(
-            1,
+            2,
             submission.eventId(),
             submission.eventType(),
             submission.source(),
@@ -51,19 +52,25 @@ public class EventIngestionService {
             acceptedAt,
             submission.payload(),
             submission.metadata(),
-            traceparent);
+            traceparent,
+            tenant,
+            producer);
 
-    boolean inserted = repository.insertEvent(submission, acceptedAt, contentHash);
+    boolean inserted =
+        repository.insertEvent(submission, acceptedAt, contentHash, tenant, producer);
     if (!inserted) {
       String existingHash =
           repository
-              .findContentHash(submission.eventId())
-              .orElseThrow(() -> new IllegalStateException("Conflicting event disappeared"));
+              .findContentHash(submission.eventId(), tenant, producer)
+              .orElseThrow(
+                  () ->
+                      new org.springframework.web.server.ResponseStatusException(
+                          org.springframework.http.HttpStatus.NOT_FOUND));
       if (!existingHash.equals(contentHash)) {
         throw new IdempotencyConflictException(submission.eventId());
       }
       Instant originalAcceptedAt =
-          repository.findStatus(submission.eventId()).orElseThrow().receivedAt();
+          repository.findStatus(submission.eventId(), tenant, producer).orElseThrow().receivedAt();
       return new IngestionResponse(submission.eventId(), "ACCEPTED", true, originalAcceptedAt);
     }
 
