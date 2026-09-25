@@ -30,11 +30,9 @@ public class RateLimitFilter extends OncePerRequestFilter {
   protected void doFilterInternal(
       HttpServletRequest request, HttpServletResponse response, FilterChain chain)
       throws ServletException, IOException {
-    String identity = request.getHeader("X-API-Key");
-    if (identity == null || identity.isBlank()) {
-      identity = request.getRemoteAddr();
-    }
-    RedisTokenBucket.Decision decision = tokenBucket.consume(hash(identity));
+    var caller = io.github.minkin.eventflow.security.Caller.current();
+    RedisTokenBucket.Decision decision =
+        tokenBucket.consume(hash(caller.tenant()), hash(caller.subject()));
     if (decision.degraded()) {
       response.setHeader("X-RateLimit-Degraded", "true");
     }
@@ -42,13 +40,18 @@ public class RateLimitFilter extends OncePerRequestFilter {
       response.setHeader("X-RateLimit-Remaining", Long.toString(decision.remaining()));
     }
     if (!decision.allowed()) {
-      response.setStatus(429);
+      int status = decision.degraded() ? 503 : 429;
+      response.setStatus(status);
+      response.setHeader("Retry-After", "1");
       response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
       response
           .getWriter()
           .write(
-              "{\"type\":\"urn:eventflow:problem:rate-limit\","
-                  + "\"title\":\"Rate limit exceeded\",\"status\":429}");
+              "{\"type\":\"about:blank\",\"title\":\""
+                  + (decision.degraded() ? "Rate limiter unavailable" : "Rate limit exceeded")
+                  + "\",\"status\":"
+                  + status
+                  + "}");
       return;
     }
     chain.doFilter(request, response);

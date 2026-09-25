@@ -23,12 +23,20 @@ class RedisTokenBucketIT {
     connection.afterPropertiesSet();
     connection.start();
     try (var executor = Executors.newFixedThreadPool(8)) {
-      var bucket = new RedisTokenBucket(new StringRedisTemplate(connection), 1, 0, true);
+      var bucket =
+          new RedisTokenBucket(
+              new StringRedisTemplate(connection),
+              1,
+              0,
+              true,
+              1000,
+              100,
+              new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
       String key = UUID.randomUUID().toString();
       var requests =
           new java.util.ArrayList<java.util.concurrent.Future<RedisTokenBucket.Decision>>();
       for (int i = 0; i < 20; i++) {
-        requests.add(executor.submit(() -> bucket.consume(key)));
+        requests.add(executor.submit(() -> bucket.consume(key, "producer")));
       }
       int accepted = 0;
       for (var request : requests) {
@@ -39,6 +47,32 @@ class RedisTokenBucketIT {
         }
       }
       assertThat(accepted).isEqualTo(1);
+    } finally {
+      connection.destroy();
+    }
+  }
+
+  @Test
+  void tenantLimitIsSharedAndDeniedProducerDoesNotSpendTenantTokens() {
+    var connection = new LettuceConnectionFactory(REDIS.getHost(), REDIS.getMappedPort(6379));
+    connection.afterPropertiesSet();
+    connection.start();
+    try {
+      var bucket =
+          new RedisTokenBucket(
+              new StringRedisTemplate(connection),
+              1,
+              0,
+              false,
+              2,
+              0,
+              new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
+      String tenant = UUID.randomUUID().toString();
+      assertThat(bucket.consume(tenant, "one").allowed()).isTrue();
+      assertThat(bucket.consume(tenant, "one").allowed()).isFalse();
+      assertThat(bucket.consume(tenant, "two").allowed()).isTrue();
+      assertThat(bucket.consume(tenant, "three").allowed()).isFalse();
+      assertThat(bucket.consume(UUID.randomUUID().toString(), "one").allowed()).isTrue();
     } finally {
       connection.destroy();
     }

@@ -10,20 +10,26 @@ import org.springframework.stereotype.Component;
 public class RedisTokenBucket {
   private static final String SCRIPT =
       """
-            local values = redis.call('HMGET', KEYS[1], 'tokens', 'updated')
-            local tokens = tonumber(values[1]) or tonumber(ARGV[1])
-            local updated = tonumber(values[2]) or tonumber(ARGV[3])
-            local elapsed = math.max(0, tonumber(ARGV[3]) - updated) / 1000
-            tokens = math.min(tonumber(ARGV[1]), tokens + elapsed * tonumber(ARGV[2]))
-            local allowed = 0
-            if tokens >= 1 then
-              tokens = tokens - 1
-              allowed = 1
-            end
-            redis.call('HSET', KEYS[1], 'tokens', tokens, 'updated', ARGV[3])
-            redis.call('PEXPIRE', KEYS[1], ARGV[4])
-            return {allowed, math.floor(tokens)}
-            """;
+      local time = redis.call('TIME')
+      local now = tonumber(time[1]) * 1000 + math.floor(tonumber(time[2]) / 1000)
+      local tokens = {}
+      local allowed = 1
+      for i = 1, 2 do
+        local capacity = tonumber(ARGV[(i-1)*2+1])
+        local refill = tonumber(ARGV[(i-1)*2+2])
+        local values = redis.call('HMGET', KEYS[i], 'tokens', 'updated')
+        local previous = tonumber(values[1]) or capacity
+        local updated = tonumber(values[2]) or now
+        tokens[i] = math.min(capacity, previous + math.max(0, now-updated) / 1000 * refill)
+        if tokens[i] < 1 then allowed = 0 end
+      end
+      for i = 1, 2 do
+        tokens[i] = tokens[i] - allowed
+        redis.call('HSET', KEYS[i], 'tokens', tokens[i], 'updated', now)
+        redis.call('PEXPIRE', KEYS[i], ARGV[5])
+      end
+      return {allowed, math.floor(math.min(tokens[1], tokens[2]))}
+      """;
 
   private final StringRedisTemplate redis;
 
@@ -33,39 +39,69 @@ public class RedisTokenBucket {
   private final int capacity;
   private final int refillPerSecond;
   private final boolean failOpen;
+  private final int tenantCapacity;
+  private final int tenantRefill;
+  private final io.micrometer.core.instrument.MeterRegistry metrics;
 
   public RedisTokenBucket(
       StringRedisTemplate redis,
       @Value("${eventflow.rate-limit.capacity:100}") int capacity,
       @Value("${eventflow.rate-limit.refill-per-second:10}") int refillPerSecond,
-      @Value("${eventflow.rate-limit.fail-open:true}") boolean failOpen) {
+      @Value("${eventflow.rate-limit.fail-open:false}") boolean failOpen,
+      @Value("${eventflow.rate-limit.tenant-capacity:1000}") int tenantCapacity,
+      @Value("${eventflow.rate-limit.tenant-refill-per-second:100}") int tenantRefill,
+      io.micrometer.core.instrument.MeterRegistry metrics) {
     this.redis = redis;
     this.capacity = capacity;
     this.refillPerSecond = refillPerSecond;
+    if (capacity < 1 || refillPerSecond < 0 || tenantCapacity < 1 || tenantRefill < 0) {
+      throw new IllegalArgumentException("Invalid token bucket configuration");
+    }
     this.failOpen = failOpen;
+    this.tenantCapacity = tenantCapacity;
+    this.tenantRefill = tenantRefill;
+    this.metrics = metrics;
   }
 
-  public Decision consume(String clientKey) {
+  public Decision consume(String tenantKey, String producerKey) {
     try {
-      long ttlMillis = Math.max(60_000, capacity * 2_000L / Math.max(1, refillPerSecond));
+      long ttlMillis =
+          Math.max(
+              60_000,
+              Math.max(
+                  capacity * 2_000L / Math.max(1, refillPerSecond),
+                  tenantCapacity * 2_000L / Math.max(1, tenantRefill)));
       List<?> result =
           redis.execute(
               script,
-              List.of("eventflow:rate:" + clientKey),
+              List.of(
+                  "eventflow:rate:{" + tenantKey + "}:tenant",
+                  "eventflow:rate:{" + tenantKey + "}:producer:" + producerKey),
+              Integer.toString(tenantCapacity),
+              Integer.toString(tenantRefill),
               Integer.toString(capacity),
               Integer.toString(refillPerSecond),
-              Long.toString(System.currentTimeMillis()),
               Long.toString(ttlMillis));
       if (result == null || result.size() < 2) {
         throw new IllegalStateException("Redis returned no token bucket result");
       }
+      metrics
+          .counter(
+              "eventflow.rate.limit.decisions",
+              "outcome",
+              ((Number) result.get(0)).longValue() == 1 ? "allowed" : "limited")
+          .increment();
       return new Decision(
           ((Number) result.get(0)).longValue() == 1, ((Number) result.get(1)).longValue(), false);
     } catch (RuntimeException exception) {
+      metrics
+          .counter(
+              "eventflow.rate.limit.decisions", "outcome", failOpen ? "fail_open" : "fail_closed")
+          .increment();
       if (failOpen) {
         return new Decision(true, -1, true);
       }
-      throw exception;
+      return new Decision(false, -1, true);
     }
   }
 
