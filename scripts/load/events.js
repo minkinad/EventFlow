@@ -10,12 +10,15 @@ export const options = {
   },
   thresholds: { http_req_failed: ['rate<0.01'], checks: ['rate>0.99'] },
 };
+export function setup() {
+  if (!__ENV.EVENTFLOW_TOKEN) throw new Error('Set EVENTFLOW_TOKEN from scripts/local-token.py');
+}
 export default function () {
   const event = {eventId: randomUUID(), eventType: 'order.created', source: 'load-test',
     schemaVersion: 1, occurredAt: new Date().toISOString(),
     payload: {orderId: randomUUID(), customerId: 'load', total: 42, currency: 'USD'}};
   const url = (__ENV.INGESTION_URL || 'http://localhost:8080') + '/api/v1/events';
-  const params = {headers: {'Content-Type': 'application/json'}};
+  const params = {headers: {'Content-Type': 'application/json', Authorization: 'Bearer ' + __ENV.EVENTFLOW_TOKEN}};
   const response = http.post(url, JSON.stringify(event), params);
   check(response, {'accepted': r => r.status === 202});
   if (__ENV.DUPLICATES === 'true') {

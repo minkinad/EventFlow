@@ -8,10 +8,22 @@ rule_files:
 scrape_configs:
   - job_name: ingestion-service
     metrics_path: /actuator/prometheus
+    oauth2:
+      client_id: metrics
+      client_secret: metrics-local-only
+      token_url: http://keycloak:8080/realms/eventflow/protocol/openid-connect/token
     static_configs: [{targets: ["ingestion-service:8080"]}]
   - job_name: processing-service
     metrics_path: /actuator/prometheus
+    oauth2:
+      client_id: metrics
+      client_secret: metrics-local-only
+      token_url: http://keycloak:8080/realms/eventflow/protocol/openid-connect/token
     static_configs: [{targets: ["processing-service:8081"]}]
   - job_name: delivery-service
     metrics_path: /actuator/prometheus
+    oauth2:
+      client_id: metrics
+      client_secret: metrics-local-only
+      token_url: http://keycloak:8080/realms/eventflow/protocol/openid-connect/token
     static_configs: [{targets: ["delivery-service:8082"]}]

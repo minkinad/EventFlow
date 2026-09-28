@@ -9,3 +9,5 @@ target/
 .env
 *.log
 .DS_Store
+__pycache__/
+/.verification/

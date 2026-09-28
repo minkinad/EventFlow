@@ -1,23 +1,31 @@
 #!/usr/bin/env python3
 """Verify the local demo from REST acceptance through both durable destinations."""
 import base64
+import http.client
 import json
 import os
 import time
 import urllib.error
 import urllib.request
+import urllib.parse
 import uuid
 from datetime import datetime, timezone
 
 INGESTION = os.getenv('INGESTION_URL', 'http://localhost:8080')
 PROCESSING = os.getenv('PROCESSING_URL', 'http://localhost:8081')
 DELIVERY = os.getenv('DELIVERY_URL', 'http://localhost:8082')
+TOKEN = os.getenv('EVENTFLOW_TOKEN')
+TOKEN_URL = os.getenv('TOKEN_URL', 'http://localhost:8180/realms/eventflow/protocol/openid-connect/token')
+
 CLICKHOUSE = os.getenv('CLICKHOUSE_URL', 'http://localhost:8123')
 
 
 def request(url, data=None, headers=None):
     body = json.dumps(data).encode() if data is not None else None
-    req = urllib.request.Request(url, body, headers or {'Content-Type': 'application/json'})
+    headers = dict(headers or {'Content-Type': 'application/json'})
+    if TOKEN:
+        headers['Authorization'] = 'Bearer ' + TOKEN
+    req = urllib.request.Request(url, body, headers)
     with urllib.request.urlopen(req, timeout=5) as response:
         raw = response.read(1024 * 1024)
         return response.status, json.loads(raw) if raw else None
@@ -30,13 +38,20 @@ def wait_until(label, check, timeout=120):
         try:
             if check():
                 return
-        except (urllib.error.URLError, ValueError, KeyError) as error:
+        except (OSError, http.client.HTTPException, ValueError, KeyError) as error:
             last = str(error)
         time.sleep(1)
     raise RuntimeError(f'{label} did not complete in {timeout}s: {last}')
 
 
 def main():
+    global TOKEN
+    if not TOKEN:
+        form = urllib.parse.urlencode({'grant_type': 'client_credentials',
+            'client_id': os.getenv('CLIENT_ID', 'demo-admin'),
+            'client_secret': os.getenv('CLIENT_SECRET', 'demo-admin-local-only')}).encode()
+        with urllib.request.urlopen(TOKEN_URL, form, timeout=10) as response:
+            TOKEN = json.load(response)['access_token']
     for url in (INGESTION, PROCESSING, DELIVERY):
         wait_until(f'{url} readiness', lambda: request(url + '/actuator/health/readiness')[1]['status'] == 'UP')
     event_id = str(uuid.uuid4())
