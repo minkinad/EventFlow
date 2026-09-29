@@ -26,9 +26,20 @@ import org.testcontainers.utility.MountableFile;
 
 /** Runs the packaged applications, their real migrations, schedulers, Kafka listeners and sinks. */
 class EventLifecycleE2E {
+  private com.nimbusds.jose.jwk.RSAKey signingKey;
+
   @Test
   void acceptanceDuplicateBothSinksAndProcessingDlqReplay() throws Exception {
+    signingKey = new com.nimbusds.jose.jwk.gen.RSAKeyGenerator(2048).keyID("e2e").generate();
     try (var network = Network.newNetwork();
+        var jwks =
+            new GenericContainer<>("nginx:1.27-alpine")
+                .withNetwork(network)
+                .withNetworkAliases("jwks")
+                .withCopyToContainer(
+                    org.testcontainers.images.builder.Transferable.of(
+                        new com.nimbusds.jose.jwk.JWKSet(signingKey.toPublicJWK()).toString()),
+                    "/usr/share/nginx/html/jwks.json");
         var postgres =
             new PostgreSQLContainer<>("postgres:17-alpine")
                 .withDatabaseName("postgres")
@@ -51,6 +62,7 @@ class EventLifecycleE2E {
                 .withEnv("CLICKHOUSE_PASSWORD", "test-password")
                 .withExposedPorts(8123)
                 .waitingFor(Wait.forHttp("/ping"))) {
+      jwks.start();
       postgres.start();
       kafka.start();
       redis.start();
@@ -87,6 +99,16 @@ class EventLifecycleE2E {
         var ingestApi = api(ingestion, 8080);
         var processApi = api(processing, 8081);
         var deliveryApi = api(delivery, 8082);
+        var foreignIngest = api(ingestion, 8080, token("other", "foreign-admin", "ADMIN"));
+        var foreignProcess = api(processing, 8081, token("other", "foreign-admin", "ADMIN"));
+        var foreignDelivery = api(delivery, 8082, token("other", "foreign-admin", "ADMIN"));
+        expectStatus(api(ingestion, 8080, null), "POST", "/api/v1/events", java.util.Map.of(), 401);
+        expectStatus(
+            api(processing, 8081, token("demo", "producer", "PRODUCER")),
+            "POST",
+            "/api/v1/pipelines",
+            java.util.Map.of(),
+            403);
         var mapper = JsonMapper.builder().findAndAddModules().build();
         UUID id = UUID.randomUUID();
         var event =
@@ -95,6 +117,8 @@ class EventLifecycleE2E {
                 .put("eventId", id.toString())
                 .put("eventType", "order.created")
                 .put("source", "e2e")
+                .put("tenantId", "other")
+                .put("producerId", "forged")
                 .put("schemaVersion", 1)
                 .put("occurredAt", Instant.now().minusSeconds(5).toString());
         event.set(
@@ -123,6 +147,30 @@ class EventLifecycleE2E {
                   statuses.forEach(
                       status -> assertThat(status.path("status").asText()).isEqualTo("SUCCEEDED"));
                 });
+        for (var scoped : java.util.List.of(foreignIngest, foreignProcess)) {
+          expectStatus(scoped, "GET", "/api/v1/events/" + id, null, 404);
+        }
+        expectStatus(foreignDelivery, "GET", "/api/v1/events/" + id + "/deliveries", null, 404);
+        expectStatus(foreignIngest, "POST", "/api/v1/events", event, 404);
+        for (var spec :
+            java.util.List.of(
+                java.util.Map.entry(ingestion, 8080),
+                java.util.Map.entry(processing, 8081),
+                java.util.Map.entry(delivery, 8082))) {
+          String path = "/api/v1/events/" + id + (spec.getValue() == 8082 ? "/deliveries" : "");
+          expectStatus(
+              api(spec.getKey(), spec.getValue(), token("demo", "another-producer", "PRODUCER")),
+              "GET",
+              path,
+              null,
+              404);
+          expectStatus(
+              api(spec.getKey(), spec.getValue(), token("demo", "test-producer", "PRODUCER")),
+              "GET",
+              path,
+              null,
+              200);
+        }
         var deliveryDb =
             JdbcClient.create(
                 new DriverManagerDataSource(
@@ -131,7 +179,8 @@ class EventLifecycleE2E {
                     postgres.getPassword()));
         assertThat(
                 deliveryDb
-                    .sql("SELECT count(*) FROM operational_event WHERE event_id=:id")
+                    .sql(
+                        "SELECT count(*) FROM operational_event WHERE event_id=:id AND tenant_id='demo' AND producer_id='test-producer'")
                     .param("id", id)
                     .query(Long.class)
                     .single())
@@ -179,6 +228,15 @@ class EventLifecycleE2E {
                 "{\"name\":\"recovery\",\"version\":1,\"eventType\":\"recovery.created\",\"steps\":[{\"type\":\"route\",\"target\":\"POSTGRES\",\"destination\":\"events\"}]}");
         var created =
             processApi.post().uri("/api/v1/pipelines").body(pipeline).retrieve().toBodilessEntity();
+        String pipelinePath = created.getHeaders().getLocation().toString();
+        expectStatus(foreignProcess, "GET", pipelinePath, null, 404);
+        expectStatus(
+            foreignProcess,
+            "POST",
+            pipelinePath + "/disable?revision=0",
+            java.util.Map.of("reason", "foreign change"),
+            404);
+        foreignProcess.post().uri("/api/v1/pipelines").body(pipeline).retrieve().toBodilessEntity();
         processApi
             .post()
             .uri(created.getHeaders().getLocation().toString() + "/validate?revision=0")
@@ -202,6 +260,21 @@ class EventLifecycleE2E {
                 .param("id", replayId)
                 .query(UUID.class)
                 .single();
+        expectStatus(foreignProcess, "POST", "/api/v1/dlq/" + dlq + "/replay", null, 404);
+        assertThat(
+                processingDb
+                    .sql("SELECT status FROM processing_dead_letter WHERE id=:id")
+                    .param("id", dlq)
+                    .query(String.class)
+                    .single())
+            .isEqualTo("OPEN");
+        assertThat(
+                processingDb
+                    .sql(
+                        "SELECT count(*) FROM audit_log WHERE tenant_id='demo' AND actor='test-producer'")
+                    .query(Long.class)
+                    .single())
+            .isGreaterThanOrEqualTo(3);
         processApi.post().uri("/api/v1/dlq/{id}/replay", dlq).retrieve().toBodilessEntity();
         await()
             .atMost(Duration.ofSeconds(60))
@@ -239,6 +312,8 @@ class EventLifecycleE2E {
             MountableFile.forHostPath(
                 Path.of("..", service, "target", service + "-0.1.0-SNAPSHOT.jar").toAbsolutePath()),
             "/app.jar")
+        .withEnv("JWT_ISSUER", "https://e2e.eventflow.test")
+        .withEnv("JWT_JWK_SET_URI", "http://jwks/jwks.json")
         .withEnv("DATABASE_URL", "jdbc:postgresql://postgres:5432/eventflow_" + name)
         .withEnv("DATABASE_USERNAME", postgres.getUsername())
         .withEnv("DATABASE_PASSWORD", postgres.getPassword())
@@ -255,9 +330,49 @@ class EventLifecycleE2E {
                 .withStartupTimeout(Duration.ofMinutes(2)));
   }
 
-  private RestClient api(GenericContainer<?> app, int port) {
-    return RestClient.builder()
-        .baseUrl("http://" + app.getHost() + ":" + app.getMappedPort(port))
-        .build();
+  private RestClient api(GenericContainer<?> app, int port) throws Exception {
+    return api(app, port, token("demo", "test-producer", "ADMIN"));
+  }
+
+  private RestClient api(GenericContainer<?> app, int port, String token) {
+    var builder =
+        RestClient.builder().baseUrl("http://" + app.getHost() + ":" + app.getMappedPort(port));
+    if (token != null) {
+      builder.defaultHeader("Authorization", "Bearer " + token);
+    }
+    return builder.build();
+  }
+
+  private String token(String tenant, String subject, String role) throws Exception {
+    var claims =
+        new com.nimbusds.jwt.JWTClaimsSet.Builder()
+            .issuer("https://e2e.eventflow.test")
+            .audience(java.util.List.of("eventflow-ingestion", "eventflow-operations"))
+            .subject(subject)
+            .claim("tenant_id", tenant)
+            .claim("roles", java.util.List.of(role))
+            .expirationTime(java.util.Date.from(Instant.now().plusSeconds(1800)))
+            .build();
+    var jwt =
+        new com.nimbusds.jwt.SignedJWT(
+            new com.nimbusds.jose.JWSHeader.Builder(com.nimbusds.jose.JWSAlgorithm.RS256)
+                .keyID("e2e")
+                .build(),
+            claims);
+    jwt.sign(new com.nimbusds.jose.crypto.RSASSASigner(signingKey));
+    return jwt.serialize();
+  }
+
+  private void expectStatus(
+      RestClient client, String method, String path, Object body, int expected) {
+    var request = client.method(org.springframework.http.HttpMethod.valueOf(method)).uri(path);
+    if (body != null) {
+      request.body(body);
+    }
+    request.exchange(
+        (sent, response) -> {
+          assertThat(response.getStatusCode().value()).as(method + " " + path).isEqualTo(expected);
+          return null;
+        });
   }
 }
