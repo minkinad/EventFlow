@@ -1,6 +1,8 @@
 # Pipeline control plane
 
-All paths are on processing-service. The current demo is local-only and unauthenticated.
+All paths are on processing-service and require JWT authentication. Mutations require
+PIPELINE_EDITOR or ADMIN; VIEWER can read. The token tenant scopes schemas, pipeline
+identity, activation locks and audit records. Foreign IDs return 404.
 `version` identifies immutable business behavior after activation; `revision` guards
 operator changes. Read the returned summary after each operation.
 
@@ -40,6 +42,6 @@ A missing pipeline returns 404; stale revision or forbidden state transition ret
 409; malformed definitions return 400. Pipeline identity fields cannot change while
 editing. Reasons are mandatory for activation, rollback and disabling.
 
-Schema families/compatibility, authenticated audit identity, tenancy and destination
+Schema families/compatibility, schema/DLQ audit coverage and destination
 registry discovery remain separate release gates. HTTP delivery itself enforces its
 configured URL allow-list even if a draft references an unapproved destination.

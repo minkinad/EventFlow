@@ -7,13 +7,14 @@ pipelines, and delivers them to PostgreSQL, ClickHouse or approved HTTP endpoint
 It demonstrates recovery across database, Kafka and remote-call crash windows in
 three Java services.
 
-This is a production-oriented architecture with a reproducible local demo. **JWT/RBAC
-and tenant isolation are not implemented; do not expose the demo APIs publicly.**
+This is a production-oriented architecture with a reproducible local demo, JWT/RBAC
+and tenant-scoped APIs. The Compose credentials and infrastructure are for local development.
 See [the audit](docs/audit-2026.md) and [implementation report](docs/implementation-report.md)
 for verified work and remaining release gates.
 
 ## Features
 
+- JWT authentication, role boundaries, tenant-scoped configuration and producer-owned event status.
 - Transactional outboxes, durable processing inbox and delivery jobs.
 - Fenced leases, expired-job recovery, durable retry deadlines and guarded DLQ replay.
 - Stable event identity, content conflicts and sink-specific idempotency.
@@ -75,22 +76,26 @@ docker compose up --build -d --wait
 ```
 
 Compose publishes ports on loopback and contains disposable local credentials.
-Service configuration requires explicit database passwords outside Compose.
+Service configuration requires explicit database passwords, JWT issuer and JWKS endpoint outside Compose.
 `make down` preserves volumes. Never delete volumes to fix a migration failure.
 For an existing pre-fencing installation, follow [upgrade notes](docs/runbooks/recovery.md).
 
 ## Send Your First Event
 
 ```bash
+export EVENTFLOW_TOKEN=$(python3 scripts/local-token.py)
 curl -i http://localhost:8080/api/v1/events \
+  -H "Authorization: Bearer $EVENTFLOW_TOKEN" \
   -H 'Content-Type: application/json' \
   -d @docs/examples/order-created.json
 ```
 
 Reuse eventId and identical content to receive duplicate acceptance; changed content
-with the same ID returns 409. `X-API-Key` currently names a rate-limit bucket only;
-it does not authenticate the request. The smoke script creates a fresh ID and
-verifies duplicate acceptance and delivery.
+with the same ID returns 409 for its original producer. Event UUIDs remain globally unique;
+a foreign tenant or producer cannot reuse a UUID or inspect its status (404).
+`X-API-Key` is not a credential. Admission quotas use JWT tenant and subject.
+The smoke script obtains a local token, creates a fresh ID and verifies both sinks.
+See [authentication and tenancy](docs/security/authentication.md) for roles and local clients.
 
 ## Pipeline Example
 
@@ -121,6 +126,7 @@ business events. See [the recovery runbook](docs/runbooks/recovery.md).
 | Endpoint | Local address |
 |---|---|
 | Ingestion / Processing / Delivery | localhost:8080 / :8081 / :8082 |
+| Keycloak | localhost:8180 (local client credentials below) |
 | Readiness | `/actuator/health/readiness` |
 | Metrics | `/actuator/prometheus` |
 | Grafana | localhost:3000 (`admin` / `admin`, local only) |
@@ -146,8 +152,10 @@ HTTP egress defaults to deny. Configure `eventflow.http.allowed-destinations` wi
 exact HTTPS URLs; private/local/metadata addresses are still denied at connection
 time. Redirects and remote schema references are disabled. No secrets belong in
 pipeline options or URLs. See [SECURITY.md](SECURITY.md) and [threat model](docs/security/threat-model.md).
-Authentication, tenancy, webhook signatures and complete payload protection remain
-release gates, not implied capabilities.
+JWTs require a valid signature, issuer, service audience, lifetime, tenant and subject.
+Pipeline and replay access are tenant-scoped, including ADMIN. Producers see only their
+own events. Webhook signatures, infrastructure TLS/ACLs and complete payload protection
+remain release gates.
 
 ## Testing
 
@@ -171,7 +179,7 @@ configured admission limit and measure backlog drain as well as HTTP latency.
 
 ## Repository Structure
 
-`common` holds wire contracts. `ingestion-service`, `processing-service` and
+`common` holds wire contracts; `security` is an explicitly imported shared library for JWT/RBAC. `ingestion-service`, `processing-service` and
 `delivery-service` are the only deployables. `infrastructure` contains local runtime
 and telemetry configuration; `scripts` contains operational checks and load scenarios.
 
@@ -184,8 +192,7 @@ and telemetry configuration; `scripts` contains operational checks and load scen
 
 ## Roadmap
 
-See [the evidence-based roadmap](docs/roadmap.md). Authentication/tenancy and schema
-compatibility are the next release gates; retention and authenticated bulk DLQ
+See [the evidence-based roadmap](docs/roadmap.md). Schema compatibility is a remaining release gate; retention and authenticated bulk DLQ
 operations need explicit policies before implementation.
 
 ## Trade-offs

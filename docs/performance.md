@@ -37,3 +37,8 @@ end-to-end throughput. Compare ClickHouse with FINAL, never physical row count.
 - No partitioning until retained tables, vacuum time and measured queries justify
   it. Start review around tens of millions of retained rows or failed latency/maintenance
   objectives; this is an investigation trigger, not a universal capacity limit.
+
+The load script requires EVENTFLOW_TOKEN from `scripts/local-token.py`. Tokens expire;
+use a token valid for the measured interval and distinguish 401 from admission 429
+and limiter-unavailable 503. Raise both tenant and producer quotas deliberately before
+measuring worker capacity. A higher offered rate alone is not accepted throughput.

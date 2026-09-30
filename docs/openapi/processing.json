@@ -3,14 +3,18 @@
   "info": {
     "title": "EventFlow Processing API",
     "version": "0.1.0",
-    "description": "Local development API. Authentication and tenant isolation are not implemented. Never expose publicly."
+    "description": "JWT bearer authentication required. Tenant comes from tenant_id; producer ownership comes from sub. Cross-tenant resources return 404. See docs/security/authentication.md."
   },
   "servers": [
     {
       "url": "http://localhost:8081"
     }
   ],
-  "security": [],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
   "paths": {
     "/api/v1/pipelines": {
       "post": {
@@ -69,6 +73,15 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing or invalid JWT (signature, issuer, audience, lifetime, tenant or subject)."
+          },
+          "403": {
+            "description": "Valid token lacks the role required for this operation."
+          },
+          "404": {
+            "description": "Entity is absent, outside this tenant, or owned by another producer."
           }
         },
         "requestBody": {
@@ -177,7 +190,8 @@
               }
             }
           }
-        }
+        },
+        "description": "PIPELINE_EDITOR or ADMIN for mutations; VIEWER may read. All configuration is tenant scoped."
       }
     },
     "/api/v1/pipelines/{id}": {
@@ -237,6 +251,15 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing or invalid JWT (signature, issuer, audience, lifetime, tenant or subject)."
+          },
+          "403": {
+            "description": "Valid token lacks the role required for this operation."
+          },
+          "404": {
+            "description": "Entity is absent, outside this tenant, or owned by another producer."
           }
         },
         "parameters": [
@@ -249,7 +272,8 @@
               "format": "uuid"
             }
           }
-        ]
+        ],
+        "description": "PIPELINE_EDITOR or ADMIN for mutations; VIEWER may read. All configuration is tenant scoped."
       },
       "put": {
         "summary": "Edit DRAFT/VALIDATED; identity fields cannot change",
@@ -307,6 +331,15 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing or invalid JWT (signature, issuer, audience, lifetime, tenant or subject)."
+          },
+          "403": {
+            "description": "Valid token lacks the role required for this operation."
+          },
+          "404": {
+            "description": "Entity is absent, outside this tenant, or owned by another producer."
           }
         },
         "parameters": [
@@ -436,7 +469,8 @@
               }
             }
           }
-        }
+        },
+        "description": "PIPELINE_EDITOR or ADMIN for mutations; VIEWER may read. All configuration is tenant scoped."
       }
     },
     "/api/v1/pipelines/{id}/activate": {
@@ -496,6 +530,15 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing or invalid JWT (signature, issuer, audience, lifetime, tenant or subject)."
+          },
+          "403": {
+            "description": "Valid token lacks the role required for this operation."
+          },
+          "404": {
+            "description": "Entity is absent, outside this tenant, or owned by another producer."
           }
         },
         "parameters": [
@@ -538,7 +581,8 @@
               }
             }
           }
-        }
+        },
+        "description": "PIPELINE_EDITOR or ADMIN for mutations; VIEWER may read. All configuration is tenant scoped."
       }
     },
     "/api/v1/pipelines/{id}/rollback": {
@@ -598,6 +642,15 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing or invalid JWT (signature, issuer, audience, lifetime, tenant or subject)."
+          },
+          "403": {
+            "description": "Valid token lacks the role required for this operation."
+          },
+          "404": {
+            "description": "Entity is absent, outside this tenant, or owned by another producer."
           }
         },
         "parameters": [
@@ -640,7 +693,8 @@
               }
             }
           }
-        }
+        },
+        "description": "PIPELINE_EDITOR or ADMIN for mutations; VIEWER may read. All configuration is tenant scoped."
       }
     },
     "/api/v1/pipelines/{id}/disable": {
@@ -700,6 +754,15 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing or invalid JWT (signature, issuer, audience, lifetime, tenant or subject)."
+          },
+          "403": {
+            "description": "Valid token lacks the role required for this operation."
+          },
+          "404": {
+            "description": "Entity is absent, outside this tenant, or owned by another producer."
           }
         },
         "parameters": [
@@ -742,7 +805,8 @@
               }
             }
           }
-        }
+        },
+        "description": "PIPELINE_EDITOR or ADMIN for mutations; VIEWER may read. All configuration is tenant scoped."
       }
     },
     "/api/v1/pipelines/{id}/validate": {
@@ -802,6 +866,15 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing or invalid JWT (signature, issuer, audience, lifetime, tenant or subject)."
+          },
+          "403": {
+            "description": "Valid token lacks the role required for this operation."
+          },
+          "404": {
+            "description": "Entity is absent, outside this tenant, or owned by another producer."
           }
         },
         "parameters": [
@@ -824,7 +897,8 @@
             },
             "description": "Expected current revision; stale changes return 409."
           }
-        ]
+        ],
+        "description": "PIPELINE_EDITOR or ADMIN for mutations; VIEWER may read. All configuration is tenant scoped."
       }
     },
     "/api/v1/pipelines/{id}/dry-run": {
@@ -843,6 +917,15 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing or invalid JWT (signature, issuer, audience, lifetime, tenant or subject)."
+          },
+          "403": {
+            "description": "Valid token lacks the role required for this operation."
+          },
+          "404": {
+            "description": "Entity is absent, outside this tenant, or owned by another producer."
           }
         },
         "parameters": [
@@ -863,7 +946,8 @@
               "schema": {}
             }
           }
-        }
+        },
+        "description": "PIPELINE_EDITOR or ADMIN for mutations; VIEWER may read. All configuration is tenant scoped."
       }
     },
     "/api/v1/schemas/{name}": {
@@ -882,6 +966,15 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing or invalid JWT (signature, issuer, audience, lifetime, tenant or subject)."
+          },
+          "403": {
+            "description": "Valid token lacks the role required for this operation."
+          },
+          "404": {
+            "description": "Entity is absent, outside this tenant, or owned by another producer."
           }
         },
         "parameters": [
@@ -903,7 +996,8 @@
               }
             }
           }
-        }
+        },
+        "description": "PIPELINE_EDITOR or ADMIN for mutations; VIEWER may read. All configuration is tenant scoped."
       }
     },
     "/api/v1/events/{eventId}": {
@@ -922,6 +1016,15 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing or invalid JWT (signature, issuer, audience, lifetime, tenant or subject)."
+          },
+          "403": {
+            "description": "Valid token lacks the role required for this operation."
+          },
+          "404": {
+            "description": "Entity is absent, outside this tenant, or owned by another producer."
           }
         },
         "parameters": [
@@ -934,7 +1037,8 @@
               "format": "uuid"
             }
           }
-        ]
+        ],
+        "description": "PRODUCER may read its own events; VIEWER, DLQ_OPERATOR and ADMIN may read events in their tenant."
       }
     },
     "/api/v1/dlq/{id}/replay": {
@@ -953,6 +1057,15 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing or invalid JWT (signature, issuer, audience, lifetime, tenant or subject)."
+          },
+          "403": {
+            "description": "Valid token lacks the role required for this operation."
+          },
+          "404": {
+            "description": "Entity is absent, outside this tenant, or owned by another producer."
           }
         },
         "parameters": [
@@ -965,7 +1078,8 @@
               "format": "uuid"
             }
           }
-        ]
+        ],
+        "description": "DLQ_OPERATOR or ADMIN, restricted to the token tenant."
       }
     }
   },
@@ -990,6 +1104,13 @@
             "type": "string"
           }
         }
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
       }
     }
   }

@@ -1,9 +1,12 @@
 # Implementation roadmap
 
-Checkpoint 2026-09-17: the upgrade is in progress. See [the implementation report](implementation-report.md) for evidence and remaining release gates.
+Checkpoint 2026-09-30: authenticated tenancy passes full clean verification with 68 tests,
+including packaged E2E. Runtime results and remaining gates are recorded in
+[the implementation report](implementation-report.md).
 
-Implemented in this increment: fenced processing/delivery/outbox recovery, durable retry deadlines, guarded replay, strict build gates, real infrastructure/E2E tests, HTTP egress protection, and a revisioned pipeline lifecycle with validate/dry-run/rollback and local append-only history. Full Maven verification passed with 58 tests, including packaged E2E. Final Compose startup/smoke checks and full authenticated tenancy are still pending.
-
+Implemented: fenced recovery, durable retries, strict build gates, HTTP egress protection,
+revisioned pipelines, JWT/RBAC, explicit tenant/producer propagation and scoped reads/replays,
+tenant-scoped schemas/pipelines, local Keycloak and atomic tenant/producer admission quotas.
 
 The roadmap is organized as vertical increments. A capability is complete only when its failure path, tests, telemetry, and runbook exist.
 
@@ -17,7 +20,7 @@ The roadmap is organized as vertical increments. A capability is complete only w
 - Compose infrastructure and initial Prometheus/Grafana/OpenTelemetry setup.
 - Architecture, reliability, ADRs, local example.
 
-The reactor compiles, unit tests pass, executable JARs package, and the Compose model validates. Exit work still required: execute all Testcontainers and end-to-end tests with Docker Engine enabled on Java 21, and add API authentication before any non-local deployment.
+Build, infrastructure and packaged E2E verification run on Java 21 with Docker. Production deployment still requires infrastructure authentication/TLS and completion of the remaining release gates.
 
 ## Increment 1 — tested vertical slice
 
@@ -32,7 +35,7 @@ Definition of Done: `mvn verify` and an end-to-end Compose smoke test pass in CI
 ## Increment 2 — pipeline control plane
 
 - Pipeline-definition JSON Schema and semantic validation.
-- Immutable schema names and revisioned draft/validate/dry-run/activate/rollback/disable lifecycle are implemented and covered by tests. Local append-only history exists; authenticated identity remains open.
+- Immutable schema names and revisioned draft/validate/dry-run/activate/rollback/disable lifecycle are implemented and covered by tests. Append-only pipeline history includes the authenticated tenant and actor.
 - Implemented: dry-run endpoint with a supplied payload and no side effects; external enrichment is explicitly skipped.
 - Schema compatibility checks.
 - Optimistic locking and audited operator identity.
@@ -42,11 +45,11 @@ Definition of Done: an incompatible configuration cannot be activated; rollback 
 
 ## Increment 3 — production security
 
-- OAuth2 resource server, tenant-scoped claims and RBAC.
-- Dedicated roles: producer, pipeline-editor, DLQ-operator, viewer.
+- Implemented: OAuth2 resource server, tenant-scoped claims and RBAC.
+- Implemented: PRODUCER, PIPELINE_EDITOR, DLQ_OPERATOR, VIEWER and tenant-local ADMIN.
 - Destination allow-list and DNS/IP egress controls.
 - TLS/SASL, managed secrets, payload size/depth limits, log redaction.
-- Per-tenant Redis token buckets plus concurrency and storage quotas.
+- Implemented: atomic tenant/producer Redis token buckets; concurrency and storage quotas remain open.
 
 Definition of Done: threat model reviewed; security integration tests cover cross-tenant and SSRF attempts; no default credential is accepted outside the local profile.
 

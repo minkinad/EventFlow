@@ -125,16 +125,18 @@ Adapter idempotency strategy:
 
 | Topic | Key | Producer | Consumer group | Local partitions | Suggested retention |
 |---|---|---|---|---:|---|
-| `eventflow.events.raw.v1` | `eventId` | ingestion/processing replay | `eventflow-processing-v1` | 6 | 7 days |
-| `eventflow.events.delivery.v1` | `eventId` | processing | `eventflow-delivery-v1` | 6 | 7 days |
-| `eventflow.events.processing-dlq.v1` | `eventId` | processing | audit/alerting | 6 | 30 days |
-| `eventflow.events.delivery-dlq.v1` | `eventId` | delivery | audit/alerting | 6 | 30 days |
+| `eventflow.events.raw.v2` | `eventId` | ingestion/processing replay | `eventflow-processing-v1` | 6 | 7 days |
+| `eventflow.events.delivery.v2` | `eventId` | processing | `eventflow-delivery-v1` | 6 | 7 days |
+| `eventflow.events.processing-dlq.v2` | `eventId` | processing | audit/alerting | 6 | 30 days |
+| `eventflow.events.delivery-dlq.v2` | `eventId` | delivery | audit/alerting | 6 | 30 days |
 
 Production uses replication factor 3 and `min.insync.replicas=2`; local Compose necessarily uses one broker. Partition count is capacity planning, not a value to change casually: it changes key-to-partition mapping and therefore ordering during the transition.
 
 ## 6. Contract rules
 
-- Envelope fields are stable and `contractVersion` is explicit.
+- EventEnvelope and DeliveryCommand require `contractVersion=2`, tenantId and producerId.
+- The unchanged DeadLetterEvent wrapper retains contractVersion 1; its v2-flow topics
+  carry the original tenant-aware message. Malformed messages remain unowned quarantine records.
 - Additive optional fields are backward-compatible. Removing, renaming, or changing meaning requires a new contract/topic version.
 - `eventId` identifies the business occurrence and never changes during replay.
 - `commandId` identifies one processing output and deduplicates delivery fan-out.
@@ -158,7 +160,7 @@ Production uses replication factor 3 and `min.insync.replicas=2`; local Compose 
 }
 ```
 
-The engine uses a fixed allow-list of Java step implementations. Configuration selects and parameterizes code; it cannot load arbitrary classes or scripts. Pipeline definitions now use strict JSON Schema, optimistic revisions, atomic activation/rollback, local append-only history and a side-effect-free dry-run. RBAC, authenticated tenant scope and authenticated audit identity remain release gates. See [the control-plane guide](control-plane.md).
+The engine uses a fixed allow-list of Java step implementations. Configuration selects and parameterizes code; it cannot load arbitrary classes or scripts. Pipeline definitions now use strict JSON Schema, optimistic revisions, atomic activation/rollback, authenticated tenant/actor pipeline history and a side-effect-free dry-run. JWT roles and tenant predicates protect configuration, status and replay. See [the control-plane guide](control-plane.md).
 
 ## 8. Scaling model
 
@@ -172,16 +174,20 @@ Initial production targets should be measured, not guessed. A reasonable test ba
 
 ## 9. Security boundaries
 
-The current code is a local-development foundation. Pipeline definitions already use an explicit draft/activate transition and schemas are immutable by name. Production readiness additionally requires:
+Business APIs validate JWT signatures, issuer, service audience and identity claims.
+Roles separate submission, configuration, read-only operations and replay. Tenant and
+producer ownership are persisted and propagated explicitly; API reads and mutations
+are scoped by SQL predicates, and ADMIN has no tenant bypass. Pipeline changes record
+the authenticated actor. See [authentication](security/authentication.md).
 
-- OAuth2/JWT or mTLS for ingestion; separate operator authentication for admin APIs;
-- tenant identity derived from credentials, never trusted from payload;
-- per-tenant limits and quotas;
+Production readiness additionally requires:
+
+- tenant concurrency/storage quotas in addition to implemented admission buckets;
 - TLS/SASL for Kafka, TLS for databases and all HTTP traffic;
 - secrets from a secret manager, not Compose environment defaults;
 - authenticated destination management (delivery already enforces an exact HTTPS allow-list and connection-time DNS/IP policy);
 - payload size/depth limits and sensitive-field redaction;
-- immutable audit records for pipeline/schema changes and DLQ replay.
+- complete immutable audit coverage for schemas and DLQ replay in addition to pipeline history.
 
 These are release gates, not optional enhancements.
 

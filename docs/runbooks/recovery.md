@@ -46,3 +46,10 @@ attempts, unknown receiver outcomes or repeated lease loss to the service owner.
 
 Do not run unbounded bulk replay. Retention remains manual pending an agreed
 retry/replay horizon; database backups must include identity records and outboxes.
+
+## Authenticated tenant upgrade
+
+Business API commands require a Bearer token with an operator role for the relevant
+tenant. Producers can inspect only their own events. ADMIN does not bypass tenant
+checks. Follow [the v1-to-v2 upgrade procedure](../security/authentication.md#upgrade-from-tenant-less-v1)
+before upgrading an existing deployment; drain old work and preserve legacy topics/data.

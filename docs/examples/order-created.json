@@ -7,10 +7,8 @@
   "payload": {
     "orderId": "ORD-2026-0001",
     "customerId": "CUS-1001",
-    "total": 149.90,
+    "total": 149.9,
     "currency": "USD"
   },
-  "metadata": {
-    "tenantId": "demo"
-  }
+  "metadata": {}
 }

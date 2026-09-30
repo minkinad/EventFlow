@@ -12,5 +12,6 @@
 | [008](008-fenced-recovery.md) | Fenced leases and durable recovery | Accepted |
 | [009](009-http-egress-policy.md) | HTTP egress and local schema references | Accepted |
 | [010](010-pipeline-lifecycle.md) | Revisioned lifecycle and side-effect-free preview | Accepted |
+| [011](011-authenticated-tenancy.md) | JWT resource servers and explicit tenant scopes | Accepted |
 
 ADRs are immutable after acceptance. A changed decision gets a new ADR that supersedes the old one.

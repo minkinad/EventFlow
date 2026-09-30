@@ -3,14 +3,18 @@
   "info": {
     "title": "EventFlow Ingestion API",
     "version": "0.1.0",
-    "description": "Local development API. Authentication and tenant isolation are not implemented. Never expose publicly."
+    "description": "JWT bearer authentication required. Tenant comes from tenant_id; producer ownership comes from sub. Cross-tenant resources return 404. See docs/security/authentication.md."
   },
   "servers": [
     {
       "url": "http://localhost:8080"
     }
   ],
-  "security": [],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
   "paths": {
     "/api/v1/events": {
       "post": {
@@ -51,6 +55,21 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing or invalid JWT (signature, issuer, audience, lifetime, tenant or subject)."
+          },
+          "403": {
+            "description": "Valid token lacks the role required for this operation."
+          },
+          "404": {
+            "description": "Entity is absent, outside this tenant, or owned by another producer."
+          },
+          "429": {
+            "description": "Atomic tenant or producer admission quota exhausted; Retry-After header."
+          },
+          "503": {
+            "description": "Admission limiter unavailable in fail-closed mode; retry later."
           }
         },
         "requestBody": {
@@ -104,7 +123,8 @@
               }
             }
           }
-        }
+        },
+        "description": "PRODUCER or ADMIN. UUIDs are globally unique. Idempotent acceptance is scoped to the original tenant and producer; a reused foreign UUID returns 404. tenantId/producerId request properties do not set ownership."
       }
     },
     "/api/v1/events/{eventId}": {
@@ -123,6 +143,15 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing or invalid JWT (signature, issuer, audience, lifetime, tenant or subject)."
+          },
+          "403": {
+            "description": "Valid token lacks the role required for this operation."
+          },
+          "404": {
+            "description": "Entity is absent, outside this tenant, or owned by another producer."
           }
         },
         "parameters": [
@@ -135,7 +164,8 @@
               "format": "uuid"
             }
           }
-        ]
+        ],
+        "description": "PRODUCER may read its own events; VIEWER, DLQ_OPERATOR and ADMIN may read events in their tenant."
       }
     }
   },
@@ -160,6 +190,13 @@
             "type": "string"
           }
         }
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
       }
     }
   }

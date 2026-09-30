@@ -1,110 +1,125 @@
-# Implementation report — checkpoint 2026-09-17
+# Implementation report — checkpoint 2026-09-30
 
 ## Executive Summary
 
-The requested upgrade is **in progress**, paused at the user's request for a series
-of focused commits. This checkpoint completes substantial reliability, build/test,
-HTTP egress and pipeline lifecycle work. It does not meet the full production
-Definition of Done: authenticated tenancy and other release gates remain open.
-Commit metadata is distributed over September 13–17 as requested; verification
-was actually performed on September 16–17. Historical commit dates are not benchmark
-or test execution evidence.
+The original upgrade remains **in progress**. This increment adds authenticated
+multi-tenant API access to the earlier reliability and pipeline lifecycle work.
+JWT roles, tenant/producer ownership, scoped SQL queries, local Keycloak and admission
+quotas are implemented as one vertical slice. Remaining production gates are listed
+below; the whole original Definition of Done is not claimed complete.
+
+The eight prior commits were dated September 13–17 as requested. This increment is
+organized into eight thematic commits dated September 21–30 at the user's request.
+Those assigned commit dates are not test execution evidence. Final verification is
+dated September 30; focused integration checks also ran on September 29.
 
 ## Architecture Changes
 
-Keep the original three deployables and service-owned databases. Add fenced lease
-transitions, durable retry schedules, strict pipeline definitions and a revisioned
-lifecycle with atomic switching. No distributed transaction or new business service
-was introduced. ADRs 008–010 document the decisions.
+Keep three deployables and service-owned databases. `common` remains wire DTOs;
+`security` is an explicitly imported library for resource-server validation and RBAC.
+Ingestion and operations use different expected audiences. JWT tenant/subject become
+persisted ownership and travel in EventEnvelope/DeliveryCommand v2 on separate Kafka
+topics. Workers take explicit tenant arguments, with no request-context dependency.
+
+Pipeline/schema names, active-version uniqueness and activation locks are tenant scoped.
+Event UUIDs remain globally unique to preserve existing inbox/outbox and sink keys;
+foreign producer/tenant reuse returns 404. Old event rows remain unowned and inaccessible
+rather than being assigned a tenant from untrusted historical metadata. ADR 011 and the
+[upgrade guide](security/authentication.md) document this choice and migration boundaries.
 
 ## Reliability
 
-- Recover expired DELIVERING jobs; stale processing/delivery workers cannot finalize,
-  retry or create DLQ effects for a newer attempt.
-- Fence outbox publication confirmation/release and renew live claims before I/O.
-- Claim delivery jobs immediately before execution; bound recovery attempts.
-- Never discard Kafka records on storage failures without a durable outcome.
-- Validate message contracts and persist rejection before acknowledging malformed input.
-- Deduplicate terminal redelivery and guard replay from the expected terminal state.
-- Preserve original inbox JSON on replay; JSONB comparison avoids formatting conflicts
-  and replay no longer rounds numbers through a parse/serialize cycle.
-- Bind UTC JDBC timestamps correctly and return the original ingestion acceptance time.
-- Correct ClickHouse TTL type and include destination in its deduplication key.
-- Preserve original Flyway migrations; add forward migrations. Existing installations
-  must stop pre-fencing workers before upgrading. Existing ClickHouse tables require
-  a reviewed table migration; changing init.sql alone does not modify an existing table.
+Earlier fenced leases, expired-job recovery, durable retry deadlines, guarded replay,
+transactional inbox/outbox transitions and stable sink idempotency remain in place.
+The full regression suite exercises these behaviors with the new identity fields.
+Existing Flyway migrations are preserved; additive migrations introduce ownership and
+configuration scopes. ClickHouse has an idempotent additive tenant-column upgrade.
+
+The local smoke loop now retries startup connection resets. Before upgrading the
+existing demo, its unpublished ingestion/processing outboxes, pending delivery work
+and open DLQs were checked and found empty. Existing volumes were preserved.
 
 ## Security
 
-Exact HTTPS URL allow-list, checked connection DNS addresses, private/metadata network
-rejection, no redirects, bounded requests, no response-body consumption and per-destination
-circuit breakers. JSON Schema remote references/base URI overrides are rejected.
-Compose publishes only on loopback; service passwords are required configuration.
-
-JWT/RBAC and tenant isolation are **not implemented**. Pipeline audit records use
-`local-unauthenticated`, not an invented operator identity. No claim of authenticated
-or tamper-proof auditing is made. See SECURITY.md and the threat model.
+- Verify RS256 signature, issuer, service audience, expiry/not-before, tenant and subject.
+  Missing audience is rejected with 401. Unknown roles grant no privileges.
+- Explicit PRODUCER, PIPELINE_EDITOR, DLQ_OPERATOR, VIEWER and ADMIN permissions;
+  ADMIN is tenant-local. Minimal probes are anonymous; metrics require a read role.
+- Producers can read only their own event status in all services. Tenant predicates
+  protect status, replay, schemas and pipeline lifecycle mutations.
+- Pipeline audit history records the verified actor/tenant without configuration secrets.
+- External enrichment uses a tenant-scoped URI from the durable envelope; payload
+  fields cannot change it. The external backend must enforce that namespace and service
+  authentication; this repository does not implement that backend.
+- Redis atomically checks tenant and producer quotas using server time. Fail-closed
+  is the default and returns 503 on outage; quota exhaustion returns 429. Explicit
+  fail-open adds a degradation header; outcomes have bounded metrics.
+- X-API-Key was never a validated credential and is now ignored. Machine clients use
+  OAuth2 client credentials. Local Keycloak fixtures, smoke, load and metrics clients
+  are documented; no unsigned authentication bypass exists.
+- Earlier HTTP egress allow-list, connection-time DNS/IP filtering, redirect denial,
+  response bounds and local-only schema references remain covered by tests.
 
 ## Testing
 
-Meaningful transactional repository tests now run through Spring proxies against
-PostgreSQL. They exercise rollback, concurrent claims, stale tokens, durable retry,
-replay and sink duplication. Infrastructure tests use real Kafka, Redis, ClickHouse
-and WireMock. A packaged-application E2E launches all three services and checks REST
-acceptance, duplicates, both sinks, pipeline recovery and same-ID DLQ replay.
+The security module tests actual RSA-signed JWTs through the filter chain and JWKS
+endpoint, including wrong signature/issuer/audience, missing claims, expiry, future
+not-before and privilege escalation. PostgreSQL tests cover tenant/owner reads,
+foreign replay, independent schema names and active pipelines. Redis tests cover
+concurrency and shared tenant quotas; outage tests verify admission and error privacy.
 
-Pipeline tests cover revision conflicts/409, immutable active definitions, concurrent
-activation, rollback, append-only history and side-effect-free previews. Enrichment
-is deliberately skipped in previews and yields an explicit incomplete result.
+Packaged application E2E uses signed JWTs against its own JWKS server and checks
+401/403, forged request ownership fields, cross-tenant 404s, same-tenant producer
+privacy, pipeline isolation, both sinks and processing DLQ recovery. These supplement
+existing rollback, stale lease, durable retry and sink deduplication regressions.
 
 ## Observability
 
-Add pending/oldest-age outbox gauges, HTTP circuit metrics, structured JSON logs,
-readiness groups, Grafana panels and Prometheus alert rules with a recovery runbook.
-End-to-end trace parenting across the asynchronous outboxes is not proven. Complete
-correlation fields, consumer-lag telemetry and all requested dashboards remain open.
+JSON logs, OTLP infrastructure, outbox gauges/alerts and circuit metrics remain.
+Prometheus now obtains/refreshes OAuth2 credentials for protected metrics endpoints.
+Admission metrics distinguish allowed, limited, fail_open and fail_closed outcomes.
+Full trace parenting/correlation across asynchronous outboxes is still not proven.
 
 ## Performance
 
-No throughput benchmark was run. Load scenarios and a measurement methodology are
-provided without invented numbers. Sequential workers and per-row ClickHouse writes
-remain deliberate investigation points; no unmeasured performance claim is made.
+No throughput benchmark was run. The k6 script requires a token; documented methodology
+distinguishes authentication failures, quota rejections, accepted throughput and completed
+effects. No capacity or performance number is inferred from unit/E2E timing.
 
 ## Remaining Limitations
 
-- JWT/RBAC, auth-derived tenant propagation/SQL isolation and credential rotation.
-- Versioned schema families and compatibility checks.
-- Authenticated audit identity and history for schemas, DLQ, credentials/destinations.
-- Destination registry validation at activation, webhook signing and configurable
-  destination-specific retry policies.
-- Payload byte/depth limits, complete redaction and standardized error/correlation fields.
-- Authenticated per-tenant/producer quotas; the current API-key header is not authentication.
-- Bounded/paginated bulk DLQ management, preview/reason/rate controls.
-- Retention/archival with an explicit idempotency/replay horizon.
-- Full operations/trace verification, sustained chaos reconciliation and measured load tests.
-- Complete OpenAPI response models and automated contract drift validation.
+- Schema families/version compatibility and activation-time destination registry validation.
+- Complete immutable audit coverage for schemas, DLQ, credentials and destinations.
+- Paginated/bounded DLQ management, replay reason/preview/rate controls.
+- Payload byte/depth limits, complete redaction and standardized public errors.
+- Tenant concurrency/storage quotas, database RLS defense in depth, retention/replay horizon.
+- Kafka/database TLS and ACLs, managed identity-provider credentials, webhook signing/rotation.
+- Full trace/correlation verification, sustained chaos reconciliation and measured load tests.
+- Complete OpenAPI response models and automated contract-drift validation.
+
+Kafka writers and direct database/analytics credentials are trusted infrastructure
+identities, not tenant-facing API credentials. Compose remains a local development
+environment with public fixture secrets. JWT alone does not make it a production topology.
 
 ## Verification
 
-Verification runs in a Java 21/Maven container through Windows Docker CLI because
-this WSL distro has no Java/Maven installation and no usable Linux Docker CLI.
-The runner uses the real Docker socket and `TESTCONTAINERS_HOST_OVERRIDE`.
+Java/Maven run in the verification container against the real Docker socket. This WSL
+environment now has a usable Linux Docker CLI. Reports are under module `target/`
+directories; generated reports and SBOMs are intentionally ignored by Git. Durable local
+command logs are under `.verification/`, also ignored, so a WSL restart does not erase them.
 
 | Check | Status | Evidence |
 |---|---|---|
-| Java / Maven | PASS | Temurin 21.0.9, Maven 3.9.11 container |
-| Unit tests | PASS | Current Surefire reports in module target directories |
-| PostgreSQL/Kafka/Redis/ClickHouse/WireMock integration | PASS | Current Failsafe reports, no Docker skip |
-| Pipeline lifecycle and conflict tests | PASS | PipelineRepositoryIT, PipelineApiTest, codec and engine tests |
-| Full `mvn clean verify` | PASS | Completed 2026-09-17 18:32:37 UTC; 58 tests, zero failures/errors/skips; formatting, static checks and coverage passed |
-| Packaged E2E | PASS | EventLifecycleE2E passed with the revisioned lifecycle, both sinks and same-ID replay |
-| Docker Compose configuration | PASS | `docker compose config --quiet` |
-| Docker Compose build | PASS | All three current application images built successfully |
-| Complete Compose startup | NOT VERIFIED | Found ClickHouse localhost/IPv6 probe failure; changed probe to 127.0.0.1, awaiting restart |
-| Smoke / operational trace checks | NOT VERIFIED | Awaiting final Compose startup |
-| Sustained chaos / performance benchmark | NOT VERIFIED | Scripts exist; no measurement or no-loss claim |
+| Java / Maven | PASS | Temurin 21.0.9, Maven 3.9.11 |
+| Compose configuration | PASS | `docker compose config --quiet` |
+| Keycloak issuer/role/tenant configuration | PASS | Local client-credentials token claims inspected without printing token |
+| Existing ClickHouse upgrade | PASS | Additive tenant/producer columns applied; existing data preserved |
+| Full clean verification, packaged E2E | PASS | `mvn -B -ntp clean verify`: 68 tests, zero failures/errors/skips; finished 2026-09-30 08:24:14 UTC; coverage, formatting, Checkstyle and SBOM gates passed |
+| Compose images | PASS | All three application images built from the current implementation |
+| Authenticated Compose smoke | PASS | Event `4f04ebe8-5995-4317-8221-cb2251563f0a`: duplicate acceptance retains timestamp, processing succeeds, both deliveries succeed, ClickHouse FINAL count is 1 |
+| Keycloak access isolation | PASS | 19 runtime checks: anonymous 401, producer mutation 403, foreign tenant/producer status 404 in all three services, own tenant 200; metrics require a read role |
+| Prometheus OAuth2 scraping | PASS | All three application targets report `up` with empty lastError |
+| Full trace propagation / sustained chaos / benchmark | NOT VERIFIED | No unsupported runtime or throughput claim |
 
-The final test count is 20 unit tests, 37 integration tests and one packaged E2E.
-Generated target reports are intentionally ignored by Git. CI uploads test, coverage,
-SBOM and Compose logs. This checkpoint's remaining verification should be repeated
-before claiming full completion of the original task.
+The updated Compose stack is running with its existing volumes. September 30 command
+logs, per-suite test totals and runtime access/scrape results are saved in `.verification/`.
