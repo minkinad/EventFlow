@@ -30,7 +30,7 @@ jobs:
       - name: Capture Compose logs
         if: always()
         run: docker compose logs --no-color > compose.log
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: verification-evidence
